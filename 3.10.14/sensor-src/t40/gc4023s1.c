@@ -187,7 +187,7 @@ struct tx_isp_sensor_attribute sensor_attr={
 	// void priv; /* point to struct tx_isp_sensor_board_info */
 };
 
-static struct regval_list sensor_init_regs_2560_1440_25fps_mipi[] = {
+static struct regval_list sensor_init_regs_2560_1440_30fps_mipi[] = {
 	/*
 	 * version 0.2 mclk 27Mhz wpclk 216Mhz rpclk 172.2Mhz mipi 864Mbps/lane
 	 * cpclk 27Mhz vts = 1500 window 2560 1440
@@ -312,7 +312,7 @@ static struct regval_list sensor_init_regs_2560_1440_25fps_mipi[] = {
 	{SENSOR_REG_END, 0x00},
 };
 
-static struct regval_list sensor_init_regs_2560_1440_25fps_24Mmipi[] = {
+static struct regval_list sensor_init_regs_2560_1440_30fps_24Mmipi[] = {
 	{0x03fe, 0xf0},
 	{0x03fe, 0x00},
 	{0x03fe, 0x10},
@@ -446,7 +446,7 @@ static struct tx_isp_sensor_win_setting sensor_win_sizes[] = {
 		.fps = 30 << 16 | 1,
 		.mbus_code = TISP_VI_FMT_SRGGB10_1X10,
 		.colorspace = TISP_COLORSPACE_SRGB,
-		.regs = sensor_init_regs_2560_1440_25fps_mipi,
+		.regs = sensor_init_regs_2560_1440_30fps_mipi,
 	},
 	{
 		.width = 2560,
@@ -454,7 +454,7 @@ static struct tx_isp_sensor_win_setting sensor_win_sizes[] = {
 		.fps = 30 << 16 | 1,
 		.mbus_code = TISP_VI_FMT_SRGGB10_1X10,
 		.colorspace = TISP_COLORSPACE_SRGB,
-		.regs = sensor_init_regs_2560_1440_25fps_24Mmipi,
+		.regs = sensor_init_regs_2560_1440_30fps_24Mmipi,
 	}
 };
 
