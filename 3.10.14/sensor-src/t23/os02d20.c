@@ -690,10 +690,11 @@ static int sensor_init(struct tx_isp_subdev *sd, int enable)
 	sensor->video.mbus.field = V4L2_FIELD_NONE;
 	sensor->video.mbus.colorspace = wsize->colorspace;
 	sensor->video.fps = wsize->fps;
-	ret = sensor_write_array(sd, wsize->regs);
 
+	ret = sensor_write_array(sd, wsize->regs);
 	if (ret)
 		return ret;
+
 	ret = tx_isp_call_subdev_notify(sd, TX_ISP_EVENT_SYNC_SENSOR_ATTR, &sensor->video);
 	sensor->priv = wsize;
 
@@ -868,12 +869,13 @@ static int sensor_g_chip_ident(struct tx_isp_subdev *sd,
 static int sensor_sensor_ops_ioctl(struct tx_isp_subdev *sd, unsigned int cmd, void *arg)
 {
 	long ret = 0;
+
 	if (IS_ERR_OR_NULL(sd)) {
 		ISP_ERROR("[%d]The pointer is invalid!\n", __LINE__);
 		return -EINVAL;
 	}
 
-	switch(cmd) {
+	switch (cmd) {
 	case TX_ISP_EVENT_SENSOR_INT_TIME:
 		if (arg)
 			ret = sensor_set_integration_time(sd, *(int*)arg);
@@ -991,8 +993,7 @@ struct platform_device sensor_platform_device = {
 	.num_resources = 0,
 };
 
-static int sensor_probe(struct i2c_client *client,
-			 const struct i2c_device_id *id)
+static int sensor_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct tx_isp_subdev *sd;
 	struct tx_isp_video_in *video;
