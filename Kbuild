@@ -31,7 +31,8 @@ kver := $(KERNEL_VERSION)
 
 # ---- SoC / kernel predicates -------------------------------------------
 is_a1     := $(if $(filter a1,$(soc)),y)
-is_t23    := $(if $(filter t23,$(soc)),y)
+# 3.10 SoCs whose vendor SDK ships the oss3 audio tree rather than oss2.
+is_oss3   := $(if $(filter t23 t32,$(soc)),y)
 is_k310   := $(if $(filter 3.10.14,$(kver)),y)
 has_avpu  := $(if $(filter t31 c100 t40 t41,$(soc)),y)
 avpu_impl := $(if $(filter t31 c100,$(soc)),t31,t40)
@@ -59,7 +60,7 @@ CONFIG_INGENIC_MOTOR_SPI      ?= n
 CONFIG_INGENIC_A1_MEDIA       ?= $(if $(is_a1),y,n)
 
 # audio flavour: T23 uses oss3 even on 3.10; otherwise it follows the kernel
-CONFIG_INGENIC_AUDIO_VARIANT  ?= $(if $(is_t23),oss3,$(if $(is_k310),oss2,oss3))
+CONFIG_INGENIC_AUDIO_VARIANT  ?= $(if $(is_oss3),oss3,$(if $(is_k310),oss2,oss3))
 
 # Dependency enforcement: pwm_core.ko and motor.ko both link tcu_alloc's
 # exported symbols (tcu_alloc_claim/release/set_max_channels). The allocator
