@@ -67,6 +67,24 @@ typedef struct tx_isp_subdev sinfo_subdev_t;
 #define SINFO_HAVE_VIDEO_MINMAX_FPS 1
 #endif
 
+/*
+ * T32 (vendor codename PRJ007) carries the board wiring too, and nests the
+ * fps triple in a tx_isp_sensor_item (value/min/max) instead of three flat
+ * unsigned ints. The packed num<<16|den encoding is unchanged, so only the
+ * member path differs.
+ */
+#if defined(CONFIG_SOC_PRJ007)
+#define SINFO_HAVE_REGINFO_WIRING 1
+#define SINFO_HAVE_VIDEO_MINMAX_FPS 1
+#define SINFO_VIDEO_FPS(v)     ((v).fps.value)
+#define SINFO_VIDEO_MIN_FPS(v) ((v).fps.min)
+#define SINFO_VIDEO_MAX_FPS(v) ((v).fps.max)
+#else
+#define SINFO_VIDEO_FPS(v)     ((v).fps)
+#define SINFO_VIDEO_MIN_FPS(v) ((v).min_fps)
+#define SINFO_VIDEO_MAX_FPS(v) ((v).max_fps)
+#endif
+
 enum sinfo_key {
 	SINFO_NAME,
 	SINFO_CHIP_ID,
@@ -214,8 +232,8 @@ static int sinfo_show(struct seq_file *m, void *v)
 			seq_printf(m, "%d\n", s->sensor->video.mbus.height);
 		break;
 	case SINFO_FPS:
-		if (s->sensor && s->sensor->video.fps) {
-			unsigned int fps = s->sensor->video.fps;
+		if (s->sensor && SINFO_VIDEO_FPS(s->sensor->video)) {
+			unsigned int fps = SINFO_VIDEO_FPS(s->sensor->video);
 			unsigned int den = fps & 0xffff;
 			seq_printf(m, "%u\n", (fps >> 16) / (den ? den : 1));
 		}
@@ -225,15 +243,15 @@ static int sinfo_show(struct seq_file *m, void *v)
 		break;
 #ifdef SINFO_HAVE_VIDEO_MINMAX_FPS
 	case SINFO_MIN_FPS:
-		if (s->sensor && s->sensor->video.min_fps) {
-			unsigned int fps = s->sensor->video.min_fps;
+		if (s->sensor && SINFO_VIDEO_MIN_FPS(s->sensor->video)) {
+			unsigned int fps = SINFO_VIDEO_MIN_FPS(s->sensor->video);
 			unsigned int den = fps & 0xffff;
 			seq_printf(m, "%u\n", (fps >> 16) / (den ? den : 1));
 		}
 		break;
 	case SINFO_MAX_FPS:
-		if (s->sensor && s->sensor->video.max_fps) {
-			unsigned int fps = s->sensor->video.max_fps;
+		if (s->sensor && SINFO_VIDEO_MAX_FPS(s->sensor->video)) {
+			unsigned int fps = SINFO_VIDEO_MAX_FPS(s->sensor->video);
 			unsigned int den = fps & 0xffff;
 			seq_printf(m, "%u\n", (fps >> 16) / (den ? den : 1));
 		}
