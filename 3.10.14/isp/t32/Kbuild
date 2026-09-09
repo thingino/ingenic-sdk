@@ -1,0 +1,15 @@
+ISP_FW_VER=2.1.0
+
+SRCS := $(DIR)/tx-isp-funcs.c \
+	$(DIR)/tx-isp-module.c \
+	$(KERNEL_VERSION)/isp/common/tx-isp-sinfo.c
+
+# T32 (vendor codename PRJ007) ships only a 3.10.14 blob in this tree.
+KVERSION := 3-10-14
+
+OBJS := $(SRCS:%.c=%.o) $(ASM_SRCS:%.S=%.o)
+OBJS += $(KERNEL_VERSION)/sdk/$(SOC_FAMILY)/$(ISP_FW_VER)/lib$(SOC_FAMILY)-firmware-$(KVERSION).a
+
+$(OUT)-objs := $(OBJS)
+
+obj-m += $(OUT).o
