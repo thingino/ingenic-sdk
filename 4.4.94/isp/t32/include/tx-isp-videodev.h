@@ -593,6 +593,7 @@ enum oneshot_control_value {
 #define TISP_VIDIOC_MEMORY_FREE                           		_IOW('T', BASE_DEVICE_PRIVATE + 59, struct isp_buf_info)
 #define TISP_VIDIOC_ONESHOT_CONTROL                                   _IOWR('T',BASE_DEVICE_PRIVATE + 60, int)
 #define TISP_VIDIOC_GET_RUNNING_MODE                                 _IOWR('T',BASE_DEVICE_PRIVATE + 61, int)
+#define TISP_VIDIOC_ONESHOT_DISABLE_DROPCNT                          _IOWR('T',BASE_DEVICE_PRIVATE + 62, int)
 //tuning ioctl
 #define TISP_VIDIOC_S_CTRL                                      _IOWR('T', BASE_TUNING_PRIVATE + 1, struct tisp_control)
 #define TISP_VIDIOC_G_CTRL                                      _IOWR('T', BASE_TUNING_PRIVATE + 2, struct tisp_control)
@@ -632,6 +633,8 @@ enum oneshot_control_value {
 #define TISP_VIDIOC_LDC_ONLINE_PROBE                                   _IOWR('T', BASE_LDC_PRIVATE + 5, int)
 #define TISP_VIDIOC_LDC_ONLINE_INIT                                    _IOWR('T', BASE_LDC_PRIVATE + 6, int)
 #define TISP_VIDIOC_GET_LDC_PAR                                        _IOWR('T', BASE_LDC_PRIVATE + 7, int)
+#define TISP_VIDIOC_SET_HLDC_BYPASS_STATE									_IOWR('T', BASE_LDC_PRIVATE + 8, int)
+#define TISP_VIDIOC_LDC_ONLINE_REFLESH_LUT									_IOWR('T', BASE_LDC_PRIVATE + 9, int)
 
 //device ioctl 1
 #define TISP_VIDIOC_SET_TIZIANO_PAR                                   _IOWR('T',BASE_DEVICE_PRIVATE1 + 0, int)

@@ -36,7 +36,7 @@
 #include <tx-isp-fast.h>
 
 #define TVERSION "V20241023a"
-#define SENSOR_VERSION  "H20251111a"
+#define SENSOR_VERSION  "H20260610a"
 
 // #define SENSOR_TEST
 
@@ -540,10 +540,6 @@ static struct regval_list sc4336p_init_regs_2560_1440_30fps_mipi[] = {
 	{0x3773,0x05},
 	{0x377a,0x0f},
 	{0x377b,0x1f},
-	{0x37fa,0x0e},
-	{0x37fb,0x31},
-	{0x37fc,0x11},
-	{0x37fd,0x36},
 	{0x3905,0x8c},
 	{0x391d,0x02},
 	{0x391f,0x49},
@@ -615,7 +611,7 @@ static struct regval_list sc4336p_init_regs_2560_1440_30fps_mipi[] = {
 	{0x5aec,0x34},
 	{0x5aed,0x2c},
 	{0x36e9,0x53},
-	{0x37f9,0x20},
+	{0x37f9,0x53},
 	{0x0100,0x01},
 	{SENSOR_REG_END, 0x00},/* END MARKER */
 };

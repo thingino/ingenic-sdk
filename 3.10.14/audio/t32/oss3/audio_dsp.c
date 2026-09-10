@@ -30,7 +30,7 @@ extern struct audio_aic_device *globe_aic;
 extern struct ingenic_dmic *globe_dmic;
 #endif
 
-static int fragment_time = 2; // the unit is 10ms.
+static int fragment_time = 20; // a frame of time
 module_param(fragment_time, int, S_IRUGO);
 MODULE_PARM_DESC(fragment_time, "The unit of the time of fragment is ms");
 
@@ -221,7 +221,7 @@ static void dsp_workqueue_handle(struct work_struct *work)
 				if(amic_route->manage.fragments[index].state){
 					amic_route->manage.fragments[index].state = false;
 					amic_route->manage.fragments[index].priv = NULL;
-					increase_frame_time_ms(&amic_base_tv, fragment_time * 10);
+					increase_frame_time_ms(&amic_base_tv, fragment_time);
 				}
 				if(index == amic_route->manage.io_tracer)
 					io_late = 1;
@@ -288,7 +288,7 @@ static void dsp_workqueue_handle(struct work_struct *work)
 				if(dmic_route->manage.fragments[index].state){
 					dmic_route->manage.fragments[index].state = false;
 					dmic_route->manage.fragments[index].priv = NULL;
-					increase_frame_time_ms(&dmic_base_tv, fragment_time * 10);
+					increase_frame_time_ms(&dmic_base_tv, fragment_time);
 				}
 				if(index == dmic_route->manage.io_tracer)
 					io_late = 1;
@@ -343,7 +343,7 @@ static void dsp_workqueue_handle(struct work_struct *work)
 					index = (ao_new_tracer + cnt) % ao_route->manage.fragment_cnt;
 					if(ao_route->manage.fragments[index].state){
 						ao_route->manage.fragments[index].state = false;
-						increase_frame_time_ms(&spk_base_tv, fragment_time * 10);
+						increase_frame_time_ms(&spk_base_tv, fragment_time);
 					}
 					if(index == ao_route->manage.io_tracer)
 						io_late = 1;
@@ -416,8 +416,8 @@ static enum hrtimer_restart jz_audio_hrtimer_callback(struct hrtimer *hr_timer) 
 	uint64_t time_usec_2  = 0;
 
 	if (atomic_read(&dsp->timer_stopped))
-		goto out;
-	hrtimer_start(&dsp->hr_timer, dsp->expires, HRTIMER_MODE_REL);
+		return HRTIMER_NORESTART;
+	hrtimer_forward_now(&dsp->hr_timer, dsp->expires);
 
 	spin_lock_irqsave(&dsp->slock, lock_flags);
 
@@ -534,8 +534,7 @@ static enum hrtimer_restart jz_audio_hrtimer_callback(struct hrtimer *hr_timer) 
 	spin_unlock_irqrestore(&dsp->slock, lock_flags);
 
 	schedule_work(&dsp->workqueue);
-out:
-	return HRTIMER_NORESTART;
+	return HRTIMER_RESTART;
 }
 
 static inline long dsp_ioctl_sync_ao_stream(struct audio_dsp_device *dsp)
@@ -576,7 +575,7 @@ static inline long dsp_ioctl_sync_ao_stream(struct audio_dsp_device *dsp)
 out:
 	mutex_unlock(&route->mlock);
 	if(wait_cnt){
-		msleep((wait_cnt + 1)*10*fragment_time);
+		msleep((wait_cnt + 1)*fragment_time);
 	}
 	return ret;
 }
@@ -722,7 +721,7 @@ static long dsp_create_dma_chan(struct audio_route *route)
 	}else{
 		manage->sample_size = route->channel*format_to_bytes(route->format);
 	}
-	manage->fragment_size = (route->rate / 100) * manage->sample_size * fragment_time;
+	manage->fragment_size = (route->rate * manage->sample_size * fragment_time) / 1000;
 	//	printk("manage->fragment_size=%d\n",manage->fragment_size);
 	if(route->index == AUDIO_ROUTE_AEC_ID){
 		parent = route->parent;
@@ -1680,12 +1679,12 @@ again:
 		io_tracer = (io_tracer + 1) % manage->fragment_cnt;
 #ifdef CONFIG_SOC_PRJ007
 		if(index == AUDIO_ROUTE_DMIC_ID) {
-			increase_frame_time_ms(&dmic_base_tv, fragment_time * 10);
+			increase_frame_time_ms(&dmic_base_tv, fragment_time);
 		}else {
-			increase_frame_time_ms(&amic_base_tv, fragment_time * 10);
+			increase_frame_time_ms(&amic_base_tv, fragment_time);
 		}
 #elif defined(CONFIG_SOC_PRJ008)
-		increase_frame_time_ms(&amic_base_tv, fragment_time * 10);
+		increase_frame_time_ms(&amic_base_tv, fragment_time);
 #endif
 	}
 	manage->io_tracer = io_tracer;
@@ -1795,7 +1794,7 @@ again:
 		}
 		i++;
 		io_tracer = (io_tracer + 1) % manage->fragment_cnt;
-		increase_frame_time_ms(&spk_base_tv, fragment_time * 10);
+		increase_frame_time_ms(&spk_base_tv, fragment_time);
 	}
 	manage->io_tracer = io_tracer;
 
@@ -2518,7 +2517,7 @@ static ssize_t audio_unbind_store(struct device *dev, struct device_attribute *a
     /* enable hrtimer */
     hrtimer_init(&dsp->hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
     dsp->hr_timer.function = jz_audio_hrtimer_callback;
-    dsp->expires = ns_to_ktime(1000*1000*fragment_time*10*2);   // the time section is default 40ms.
+    dsp->expires = ns_to_ktime(1000*1000*fragment_time*2);   // the time section is default 40ms.
     INIT_WORK(&dsp->workqueue, dsp_workqueue_handle);
 
     /* enable hrtimer */
@@ -2559,7 +2558,7 @@ static int audio_dsp_probe(struct platform_device *pdev)
 	atomic_set(&dspdev->timer_stopped, 1);
 	hrtimer_init(&dspdev->hr_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 	dspdev->hr_timer.function = jz_audio_hrtimer_callback;
-	dspdev->expires = ns_to_ktime(1000*1000*fragment_time*10*2);	// the time section is default 40ms.
+	dspdev->expires = ns_to_ktime(1000*1000*fragment_time*2);	// the time section is default 40ms.
 	INIT_WORK(&dspdev->workqueue, dsp_workqueue_handle);
 
 	globe_dspdev = dspdev;

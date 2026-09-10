@@ -57,7 +57,7 @@ enum audio_inter_cmd {
 
 #define INNER_CODEC  0
 #define EXTERNAL_CODEC 1
-/* the size of one data fragment is 10ms */
+
 struct dsp_data_fragment {
 	struct list_head	list;
 	bool 				state;

@@ -196,6 +196,24 @@ static inline int ingenic_as_dma_get_tsz(int fifo_depth,
 		*ts_byte_sz = ts_word_sz << 2;
 	return tsz_reg;
 }
+
+static inline int ingenic_as_dma_get_fth_by_tsz(int tsz)
+{
+	switch (tsz) {
+	case 0:
+		return 1;
+	case 1:
+		return 4;
+	case 2:
+		return 8;
+	case 3:
+		return 16;
+	case 4:
+		return 32;
+	default:
+		return 32;
+	}
+}
 #endif
 int ingenic_dmic_dma_start(void);
 int ingenic_dmic_dma_stop(void);

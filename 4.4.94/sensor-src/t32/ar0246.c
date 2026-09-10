@@ -1909,13 +1909,13 @@ static int ar0246_s_stream(struct tx_isp_subdev *sd, struct tx_isp_initarg *init
 static int ar0246_set_expo(struct tx_isp_subdev *sd, int value)
 {
     int ret = ISP_SUCCESS;
-    int it = value & 0xffff;
-    int again = (value & 0xffff0000) >> 16;
+    uint16_t it = value & 0xffff;
+    uint16_t again = (value & 0xffff0000) >> 16;
     printk("it =  %d,again = %d \n", it, again);
 
-    ret += ar0246_write(sd, 0x3012, (unsigned char)it);
+    ret += ar0246_write(sd, 0x3012, (uint16_t)it);
 
-    ret += ar0246_write(sd, 0x5900, (unsigned char)again);
+    ret += ar0246_write(sd, 0x5900, (uint16_t)again);
 
     return ret;
 }

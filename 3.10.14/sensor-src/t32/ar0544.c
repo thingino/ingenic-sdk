@@ -1566,13 +1566,13 @@ static int ar0544_s_stream(struct tx_isp_subdev *sd, struct tx_isp_initarg *init
 static int ar0544_set_expo(struct tx_isp_subdev *sd, int value)
 {
     int ret = ISP_SUCCESS;
-    int it = value & 0xffff;
-    int again = (value & 0xffff0000) >> 16;
+    uint16_t it = value & 0xffff;
+    uint16_t again = (value & 0xffff0000) >> 16;
     printk("it =  %d,again = %d \n", it, again);
 
-    ret += ar0544_write(sd, 0x0202, (unsigned char)it,2);
+    ret += ar0544_write(sd, 0x0202, (uint16_t)it,2);
 
-    ret += ar0544_write(sd, 0x3062, (unsigned char)again,2);
+    ret += ar0544_write(sd, 0x3062, (uint16_t)again,2);
 
     return ret;
 }

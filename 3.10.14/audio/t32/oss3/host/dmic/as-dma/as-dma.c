@@ -120,6 +120,9 @@ int ingenic_dmic_dma_init(dma_addr_t dma_addr, unsigned int fragment_size,unsign
 {
 	struct ingenic_dmic_dma *dmic_dma = globe_dmic_dma;
 	int ret = 0;
+	int tsz = 0;
+	int ts_size = 0;
+	int fth = 0;
 	ret = ingenic_dmic_dma_alloc_descs(dmic_dma,fragment_cnt);
 	if (ret < 0)
 		return ret;
@@ -127,10 +130,11 @@ int ingenic_dmic_dma_init(dma_addr_t dma_addr, unsigned int fragment_size,unsign
 	//ret = ingenic_as_fmtcov_cfg(substream, params);
 	if (ret < 0)
 		return ret;
-	if(fragment_size < 640)
-		regmap_write(dmic_dma->fifo_regmap, FFR(5), FFR_FTH(16) | (FFR_FIFO_TD));
-	else
-		regmap_write(dmic_dma->fifo_regmap, FFR(5), FFR_FTH(32) | (FFR_FIFO_TD));
+
+	ts_size = 0;
+	tsz = ingenic_as_dma_get_tsz(dmic_dma->fifo_depth, fragment_size, &ts_size);
+	fth = ingenic_as_dma_get_fth_by_tsz(tsz);
+	regmap_write(dmic_dma->fifo_regmap, FFR(5), FFR_FTH(fth) | (FFR_FIFO_TD));
 
 	return 0;
 }

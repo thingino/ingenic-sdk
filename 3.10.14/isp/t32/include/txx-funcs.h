@@ -71,6 +71,13 @@ extern char *sclk_name[2];
 extern char *sclk_name[3];
 #endif
 extern struct module *isp_module;
+
+enum isp_oneshot_mode {
+	TISP_ONESHOT_DEFAULT_MODE,	/*默认模式*/
+	TISP_ONESHOT_STREAMOFF_MODE,/*sensor帧尾停流*/
+	TISP_ONESHOT_ONEBYONE_MODE,	/*sensor串行开流*/
+};
+
 int isp_printf(unsigned int level, unsigned char *fmt, ...);
 char *get_clk_name(void);
 char *get_clks_name(void);
