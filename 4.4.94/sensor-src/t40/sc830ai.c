@@ -34,7 +34,6 @@
 #define SENSOR_SUPPORT_SCLK_8M_FPS_30 (143892000)
 #define SENSOR_SUPPORT_SCLK_8M_FPS_15 (71946000)
 #define SENSOR_SUPPORT_SCLK_8M_FPS_15_2LANE (81000000)
-#define SENSOR_OUTPUT_MAX_FPS 30
 #define SENSOR_OUTPUT_MIN_FPS 5
 #define DRIVE_CAPABILITY_1
 #define SENSOR_VERSION "H20220610a"
@@ -1318,10 +1317,11 @@ static int sensor_set_fps(struct tx_isp_subdev *sd, int fps)
 		break;
 	default:
 		ISP_ERROR("Now we do not support this framerate!!!\n");
+		return -1;
 	}
 
 	newformat = (((fps >> 16) / (fps & 0xffff)) << 8) + ((((fps >> 16) % (fps & 0xffff)) << 8) / (fps & 0xffff));
-	if (newformat > (SENSOR_OUTPUT_MAX_FPS << 8) || newformat < (SENSOR_OUTPUT_MIN_FPS << 8)) {
+	if (newformat > (max_fps << 8) || newformat < (SENSOR_OUTPUT_MIN_FPS << 8)) {
 		ISP_ERROR("warn: fps(%d) not in range\n", fps);
 		return -1;
 	}
