@@ -5,7 +5,7 @@
  *
  * Settings:
  * sboot        resolution      fps       interface              mode
- *   0          2304*1296       30        mipi_2lane            linear
+ *   0          2304*1296       25        mipi_2lane            linear
  */
 
 #include <linux/init.h>
@@ -31,16 +31,22 @@
 // HARDWARE INTERFACE
 // ============================================================================
 #define SENSOR_BUS_TYPE TX_SENSOR_CONTROL_INTERFACE_I2C
-#define SENSOR_I2C_ADDRESS 0x30
+#define SENSOR_I2C_ADDRESS 0x32
 
 #define SENSOR_REG_END 0xffff
 #define SENSOR_REG_DELAY 0xfffe
 #define SENSOR_OUTPUT_MIN_FPS 5
 #define SENSOR_VERSION "H20220817a"
-#define MCLK 27000000
+/* 24 MHz, matching the native t40 sc3336 (same 0xcc41 part) and the
+ * stock sensor_sc3338_t40.ko. The t41 port carried 27 MHz, which no
+ * t40 parent clock divides evenly (mpll 1200 MHz % 27 != 0), forcing
+ * sensor_attr_check() into the sclk_name[] parent walk on every probe. */
+#define MCLK 24000000
 
-static int reset_gpio = GPIO_PA(18);
-static int pwdn_gpio = GPIO_PA(19);
+/* Stock sensor_sc3338_t40.ko uses reset=GPIO_PC(28) (92) and no pwdn;
+ * these are only defaults - IMPSensorInfo.rst_gpio overrides at probe. */
+static int reset_gpio = GPIO_PC(28);
+static int pwdn_gpio = -1;
 char *__attribute__((weak)) sclk_name[4];
 
 struct regval_list {
@@ -263,9 +269,9 @@ unsigned int sensor_alloc_dgain(unsigned int isp_gain, unsigned char shift, unsi
 
 struct tx_isp_mipi_bus sensor_mipi = {
 	.mode = SENSOR_MIPI_OTHER_MODE,
-	.clk = 506,
+	.clk = 510,
 	.lans = 2,
-	.settle_time_apative_en = 1,
+	.settle_time_apative_en = 0,
 	.mipi_sc.sensor_csi_fmt = TX_SENSOR_RAW10,
 	.mipi_sc.hcrop_diff_en = 0,
 	.mipi_sc.mipi_vcomp_en = 0,
@@ -303,29 +309,33 @@ struct tx_isp_sensor_attribute sensor_attr = {
 	.integration_time_apply_delay = 2,
 	.again_apply_delay = 2,
 	.dgain_apply_delay = 0,
+	.one_line_expr_in_us = 25,
 	.sensor_ctrl.alloc_again = sensor_alloc_again,
 	.sensor_ctrl.alloc_dgain = sensor_alloc_dgain,
 };
 
-static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
+/*
+ * 2304x1296 over 2 MIPI lanes (25 fps nominal, vts 1632): boot 0 of the
+ * stock eufy T8416 sensor_sc3338_t40.ko, copied byte-for-byte. The t41-port
+ * table used here before had different PLL/MIPI settings (0x36ea-0x36ed,
+ * 0x37fa-0x37fd, 0x37f9) and a 30 fps vts of 1350.
+ */
+static struct regval_list sensor_init_regs_2304_1296_25fps_mipi[] = {
 	{0x0103, 0x01},
 	{0x36e9, 0x80},
-	{0x37f9, 0x80},
-	{0x301f, 0x01},
+	{0x37f9, 0x80}, /* PLL2 */
+	{0x301f, 0x02}, /* setting index */
 	{0x30b8, 0x33},
-	{0x320c, 0x04},//hts 1250
-	{0x320d, 0xe2},//
-	{0x320e, 0x05},//vts 1350
-	{0x320f, 0x46},//
+	{0x320e, 0x06}, /* vts 0x660=1632 */
+	{0x320f, 0x60},
+	{0x3221, 0x66}, /* flip[6:5] mirror[2:1] */
 	{0x3253, 0x10},
 	{0x325f, 0x20},
 	{0x3301, 0x04},
 	{0x3306, 0x50},
-	{0x3309, 0xa8},
 	{0x330a, 0x00},
 	{0x330b, 0xd8},
 	{0x3314, 0x13},
-	{0x331f, 0x99},
 	{0x3333, 0x10},
 	{0x3334, 0x40},
 	{0x335e, 0x06},
@@ -345,7 +355,7 @@ static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
 	{0x3399, 0x04},
 	{0x339a, 0x0a},
 	{0x339b, 0x3a},
-	{0x339c, 0xa0},
+	{0x339c, 0xc4},
 	{0x33a2, 0x04},
 	{0x33ac, 0x08},
 	{0x33ad, 0x1c},
@@ -378,16 +388,16 @@ static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
 	{0x3674, 0xc0},
 	{0x3675, 0xc0},
 	{0x3676, 0xc0},
-	{0x3677, 0x86},
-	{0x3678, 0x86},
-	{0x3679, 0x86},
+	{0x3677, 0x84},
+	{0x3678, 0x8a},
+	{0x3679, 0x8c},
 	{0x367c, 0x48},
 	{0x367d, 0x49},
 	{0x367e, 0x4b},
 	{0x367f, 0x5f},
-	{0x3690, 0x32},
-	{0x3691, 0x32},
-	{0x3692, 0x42},
+	{0x3690, 0x33},
+	{0x3691, 0x33},
+	{0x3692, 0x44},
 	{0x369c, 0x4b},
 	{0x369d, 0x5f},
 	{0x36b0, 0x87},
@@ -397,6 +407,10 @@ static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
 	{0x36b4, 0x49},
 	{0x36b5, 0x4b},
 	{0x36b6, 0x4f},
+	{0x36ea, 0x11},
+	{0x36eb, 0x0d},
+	{0x36ec, 0x1c},
+	{0x36ed, 0x26},
 	{0x370f, 0x01},
 	{0x3722, 0x09},
 	{0x3724, 0x41},
@@ -406,6 +420,10 @@ static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
 	{0x3773, 0x05},
 	{0x377a, 0x48},
 	{0x377b, 0x5f},
+	{0x37fa, 0x11},
+	{0x37fb, 0x33},
+	{0x37fc, 0x11},
+	{0x37fd, 0x08},
 	{0x3904, 0x04},
 	{0x3905, 0x8c},
 	{0x391d, 0x04},
@@ -418,8 +436,8 @@ static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
 	{0x3937, 0x6a},
 	{0x3938, 0x6a},
 	{0x39dc, 0x02},
-	{0x3e01, 0x53},
-	{0x3e02, 0xe0},
+	{0x3e01, 0x54},
+	{0x3e02, 0x80},
 	{0x3e09, 0x00},
 	{0x440e, 0x02},
 	{0x4509, 0x20},
@@ -438,20 +456,21 @@ static struct regval_list sensor_init_regs_2304_1296_30fps_mipi_2lane[] = {
 	{0x5aec, 0x34},
 	{0x5aed, 0x2c},
 	{0x36e9, 0x54},
-	{0x37f9, 0x27},
+	{0x37f9, 0x47}, /* PLL2 */
 	{0x0100, 0x01},
+	/* not in stock: an I2C write right after stream on NACKs (-EIO) */
 	{SENSOR_REG_DELAY, 0x01},
-	{SENSOR_REG_END, 0x00},/* END MARKER */
+	{SENSOR_REG_END, 0x00},
 };
 
 static struct tx_isp_sensor_win_setting sensor_win_sizes[] = {
 	{
 		.width = 2304,
 		.height = 1296,
-		.fps = 30 << 16 | 1,
+		.fps = 25 << 16 | 1,
 		.mbus_code = TISP_VI_FMT_SBGGR10_1X10,
 		.colorspace = TISP_COLORSPACE_SRGB,
-		.regs = sensor_init_regs_2304_1296_30fps_mipi_2lane,
+		.regs = sensor_init_regs_2304_1296_25fps_mipi,
 	}
 };
 struct tx_isp_sensor_win_setting *wsize = &sensor_win_sizes[0];
@@ -687,7 +706,7 @@ static int sensor_set_fps(struct tx_isp_subdev *sd, int fps) {
 	printk(" \nEnter sensor_set_fps !\n ");
 	switch (sensor->info.default_boot) {
 		case 0:
-			sclk = 101250000; /* 1250 * 1350 * 30 * 2 */
+			sclk = 102000000; /* 1250 * 1632 * 25 * 2 */
 			max_fps = 30;
 			break;
 		default:
@@ -773,6 +792,7 @@ static int sensor_attr_check(struct tx_isp_subdev *sd) {
 	struct i2c_client *client = tx_isp_get_subdevdata(sd);
 	struct clk *sclka;
 	struct clk *tclk;
+	struct clk *pclk;
 	unsigned long rate;
 	uint8_t i;
 	int ret = 0;
@@ -783,13 +803,13 @@ static int sensor_attr_check(struct tx_isp_subdev *sd) {
 			memcpy(&(sensor_attr.mipi), &sensor_mipi, sizeof(sensor_mipi));
 			sensor_attr.data_type = TX_SENSOR_DATA_TYPE_LINEAR;
 			sensor_attr.dbus_type = TX_SENSOR_DATA_INTERFACE_MIPI;
-			sensor_attr.max_integration_time_native = 1350 - 8;
-			sensor_attr.integration_time_limit = 1350 - 8;
+			sensor_attr.max_integration_time_native = 1632 - 8;
+			sensor_attr.integration_time_limit = 1632 - 8;
 			sensor_attr.total_width = 2500;
-			sensor_attr.total_height = 1350;
-			sensor_attr.max_integration_time = 1350 - 8;
+			sensor_attr.total_height = 1632;
+			sensor_attr.max_integration_time = 1632 - 8;
 			sensor_attr.again = 0;
-			sensor_attr.integration_time = 0x700;
+			sensor_attr.integration_time = 0x548;
 			break;
 		default:
 			ISP_ERROR("Have no this Setting Source!!!\n");
@@ -799,6 +819,10 @@ static int sensor_attr_check(struct tx_isp_subdev *sd) {
 		case TISP_SENSOR_VI_MIPI_CSI0:
 			sensor_attr.dbus_type = TX_SENSOR_DATA_INTERFACE_MIPI;
 			sensor_attr.mipi.index = 0;
+			break;
+		case TISP_SENSOR_VI_MIPI_CSI1:
+			sensor_attr.dbus_type = TX_SENSOR_DATA_INTERFACE_MIPI;
+			sensor_attr.mipi.index = 1;
 			break;
 		case TISP_SENSOR_VI_DVP:
 			sensor_attr.dbus_type = TX_SENSOR_DATA_INTERFACE_DVP;
@@ -837,7 +861,12 @@ static int sensor_attr_check(struct tx_isp_subdev *sd) {
 		uint8_t sclk_name_num = sizeof(sclk_name) / sizeof(sclk_name[0]);
 		for (i = 0; i < sclk_name_num; i++) {
 			tclk = private_devm_clk_get(&client->dev, sclk_name[i]);
-			ret = clk_set_parent(sclka, clk_get(NULL, sclk_name[i]));
+			pclk = clk_get(NULL, sclk_name[i]);
+			if (IS_ERR(pclk)) {
+				pr_err("get parent clk %s failed\n", sclk_name[i]);
+				continue;
+			}
+			ret = clk_set_parent(sclka, pclk);
 			if (IS_ERR(tclk)) {
 				pr_err("get sclka failed\n");
 			} else {
@@ -876,11 +905,11 @@ static int sensor_g_chip_ident(struct tx_isp_subdev *sd,
 		ret = private_gpio_request(reset_gpio, "sensor_reset");
 		if (!ret) {
 			private_gpio_direction_output(reset_gpio, 1);
-			private_msleep(5);
+			private_msleep(50);
 			private_gpio_direction_output(reset_gpio, 0);
-			private_msleep(5);
+			private_msleep(35);
 			private_gpio_direction_output(reset_gpio, 1);
-			private_msleep(5);
+			private_msleep(35);
 		} else {
 			ISP_ERROR("gpio request fail %d\n", reset_gpio);
 		}
