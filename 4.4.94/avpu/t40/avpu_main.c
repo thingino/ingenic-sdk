@@ -43,6 +43,9 @@ MODULE_PARM_DESC(clk_name, "chose parent clk");
 static int avpu_clk = 550000000;
 module_param(avpu_clk, int, S_IRUGO);
 MODULE_PARM_DESC(avpu_clk, "avpu clock freq");
+static int avpu_parent_rate;
+module_param(avpu_parent_rate, int, S_IRUGO);
+MODULE_PARM_DESC(avpu_parent_rate, "parent clk rate to set first (0 = leave it)");
 static struct class *module_class;
 
 #if 1
@@ -515,6 +518,14 @@ int avpu_codec_probe(struct platform_device *pdev)
 		goto out_get_vpu_clk_cgu;
 	}
 
+	/* mpll and sclka have no divisor for rates like 750 MHz; an idle
+	 * PLL (vpll/epll) can be set to a multiple of avpu_clk first */
+	if (avpu_parent_rate > 0) {
+		struct clk *parent = clk_get(NULL, clk_name);
+
+		if (IS_ERR(parent) || clk_set_rate(parent, avpu_parent_rate))
+			printk("clk_set_rate failed!!! parent name = %s\n", clk_name);
+	}
 	ret = clk_set_parent(codec->clk_mux, clk_get(NULL, clk_name));
     if (ret){
         printk("clk_set_parent failed!!! parent name = %s\n", clk_name);
