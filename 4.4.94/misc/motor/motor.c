@@ -138,6 +138,22 @@ static int debug = 0;
 module_param(nolimits, int, 0644); MODULE_PARM_DESC(nolimits, "Skip limit-switch checks for switch-less heads (1=limitless)");
 module_param(debug, int, 0644); MODULE_PARM_DESC(debug, "Verbose motor debug logging");
 
+/*
+ * Switch-less head: nolimits set, or any limit GPIO left at -1. Such heads
+ * have no reference to home against, so travel comes from hmaxstep/vmaxstep.
+ */
+static int motor_switchless(void)
+{
+	return nolimits ||
+		!gpio_is_valid((int)motors_pdata[HORIZONTAL_MOTOR].motor_min_gpio) ||
+		!gpio_is_valid((int)motors_pdata[HORIZONTAL_MOTOR].motor_max_gpio) ||
+		!gpio_is_valid((int)motors_pdata[VERTICAL_MOTOR].motor_min_gpio) ||
+		!gpio_is_valid((int)motors_pdata[VERTICAL_MOTOR].motor_max_gpio);
+}
+
+#define motor_dbg(fmt, ...) \
+	do { if (debug) pr_info("motor: " fmt, ##__VA_ARGS__); } while (0)
+
 /* Coil drive level, honouring invert_gpio_dir (active-low stepper drivers). */
 static inline int motor_coil_level(int on)
 {
@@ -408,6 +424,10 @@ static long motor_ops_move(struct motor_device *mdev, int x, int y)
 	int times = 1;
 	int value = 0;
 
+	motor_dbg("move x=%d y=%d cur=%d,%d max=%d,%d\n", x, y,
+		  motors[HORIZONTAL_MOTOR].cur_steps, motors[VERTICAL_MOTOR].cur_steps,
+		  motors[HORIZONTAL_MOTOR].max_steps, motors[VERTICAL_MOTOR].max_steps);
+
 	/*
 	 * Limit-switch gating. Skipped in nolimits mode (switch-less heads run
 	 * on software step-count stops); each read is also guarded by GPIO
@@ -536,7 +556,7 @@ static inline int motor_ops_reset_check_params(struct motor_reset_data *rdata)
 	if(rdata->x_max_steps == 0 || rdata->y_max_steps == 0){
 		return -1;
 	}
-	if(rdata->x_max_steps < rdata->x_cur_step || rdata->x_max_steps < rdata->x_cur_step)
+	if(rdata->x_max_steps < rdata->x_cur_step || rdata->y_max_steps < rdata->y_cur_step)
 		return -1;
 	return 0;
 }
@@ -556,6 +576,10 @@ static long motor_ops_reset(struct motor_device *mdev, struct motor_reset_data *
 		return -EPERM;
 	}
 
+	motor_dbg("reset max=%u,%u cur=%u,%u switchless=%d\n",
+		  rdata->x_max_steps, rdata->y_max_steps,
+		  rdata->x_cur_step, rdata->y_cur_step, motor_switchless());
+
 	if(motor_ops_reset_check_params(rdata) == 0){
 		/* app set max steps and current pos */
 		mutex_lock(&mdev->dev_mutex);
@@ -566,6 +590,27 @@ static long motor_ops_reset(struct motor_device *mdev, struct motor_reset_data *
 		mdev->motors[VERTICAL_MOTOR].cur_steps = rdata->y_cur_step;
 		spin_unlock_irqrestore(&mdev->slock, flags);
 		mutex_unlock(&mdev->dev_mutex);
+	}else if(motor_switchless()){
+		/*
+		 * No end switches to home against: the limit search below would
+		 * sample invalid GPIOs and wait for a completion that never comes.
+		 * Keep the hmaxstep/vmaxstep travel and assume the centre.
+		 */
+		if (hmaxstep <= 0 || vmaxstep <= 0)
+			return -EINVAL;
+		mutex_lock(&mdev->dev_mutex);
+		spin_lock_irqsave(&mdev->slock, flags);
+		mdev->motors[HORIZONTAL_MOTOR].max_steps = hmaxstep;
+		mdev->motors[HORIZONTAL_MOTOR].cur_steps = hmaxstep >> 1;
+		mdev->motors[VERTICAL_MOTOR].max_steps = vmaxstep;
+		mdev->motors[VERTICAL_MOTOR].cur_steps = vmaxstep >> 1;
+		spin_unlock_irqrestore(&mdev->slock, flags);
+		mutex_unlock(&mdev->dev_mutex);
+		rdata->x_max_steps = hmaxstep;
+		rdata->x_cur_step = hmaxstep >> 1;
+		rdata->y_max_steps = vmaxstep;
+		rdata->y_cur_step = vmaxstep >> 1;
+		return 0;
 	}else{
 		/* driver calculate max steps. */
 		mutex_lock(&mdev->dev_mutex);
@@ -685,6 +730,8 @@ static long motor_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EPERM;
 	}
 
+	motor_dbg("ioctl cmd=0x%x\n", cmd);
+
 	switch (cmd) {
 		case MOTOR_STOP:
 			motor_ops_stop(mdev);
@@ -771,6 +818,7 @@ static long motor_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 }
 
 static struct file_operations motor_fops = {
+	.owner = THIS_MODULE,	/* an open /dev/motor pins the module */
 	.open = motor_open,
 	.release = motor_release,
 	.unlocked_ioctl = motor_ioctl,
@@ -809,6 +857,7 @@ static int motor_info_open(struct inode *inode, struct file *file)
 }
 
 static const struct file_operations motor_info_fops ={
+	.owner = THIS_MODULE,
 	.read = seq_read,
 	.open = motor_info_open,
 	.llseek = seq_lseek,
@@ -836,6 +885,8 @@ static int motor_probe(struct platform_device *pdev)
 		goto error_devm_kzalloc;
 	}
 
+	motor_dbg("probe %s switchless=%d maxstep=%d,%d\n", dev_name(&pdev->dev),
+		  motor_switchless(), hmaxstep, vmaxstep);
 	mdev->dev = &pdev->dev;
 	mdev->tcu = (struct ingenic_tcu_chn *)mdev->cell->platform_data;
 	mdev->tcu->irq_type = FULL_IRQ_MODE;
@@ -912,9 +963,17 @@ static int motor_probe(struct platform_device *pdev)
 		setup_timer(&motor->max_timer,
 			    gpio_keys_max_timer, (unsigned long)motor);
 	}
-	jzgpio_set_func(GPIO_PORT_C,GPIO_PULL_UP,1<<13);
-	jzgpio_set_func(GPIO_PORT_C,GPIO_PULL_UP,1<<14);
-	jzgpio_set_func(GPIO_PORT_C,GPIO_PULL_UP,1<<18);
+	/*
+	 * Pull-ups for the reference board's limit switches (PC13/PC14/PC18).
+	 * On switch-less heads these pins may be phase outputs (e.g. PC13 on
+	 * the Cinnado D1), so leave them alone there.
+	 */
+	if (!motor_switchless()) {
+		jzgpio_set_func(GPIO_PORT_C,GPIO_PULL_UP,1<<13);
+		jzgpio_set_func(GPIO_PORT_C,GPIO_PULL_UP,1<<14);
+		jzgpio_set_func(GPIO_PORT_C,GPIO_PULL_UP,1<<18);
+	}
+	motor_dbg("probe gpios done, tcu virq\n");
 	ingenic_tcu_channel_to_virq(mdev->tcu);
 	mdev->run_step_irq = mdev->tcu->virq[0];
 	if (mdev->run_step_irq < 0) {
@@ -959,12 +1018,19 @@ static int motor_probe(struct platform_device *pdev)
 	 * (motor_switch_gpio / invert_direction_polarity are accepted for
 	 * S59motor compatibility but not yet honoured on this 4.4.94 driver.)
 	 */
-	if (hmaxstep > 0)
+	if (hmaxstep > 0) {
 		mdev->motors[HORIZONTAL_MOTOR].max_steps = hmaxstep;
-	if (vmaxstep > 0)
+		mdev->motors[HORIZONTAL_MOTOR].cur_steps = hmaxstep >> 1;
+	}
+	if (vmaxstep > 0) {
 		mdev->motors[VERTICAL_MOTOR].max_steps = vmaxstep;
+		mdev->motors[VERTICAL_MOTOR].cur_steps = vmaxstep >> 1;
+	}
 
 	mdev->flag = 0;
+	motor_dbg("probe ok irq=%d cur=%d,%d\n", mdev->run_step_irq,
+		  mdev->motors[HORIZONTAL_MOTOR].cur_steps,
+		  mdev->motors[VERTICAL_MOTOR].cur_steps);
 	ingenic_tcu_counter_begin(mdev->tcu);
 
 	//printk("%s%d\n",__func__,__LINE__);
@@ -1005,7 +1071,6 @@ error_min_gpio:
 		del_timer_sync(&motor->min_timer);
 		del_timer_sync(&motor->max_timer);
 	}
-	kfree(mdev);
 error_devm_kzalloc:
 	return ret;
 }
@@ -1015,6 +1080,12 @@ static int motor_remove(struct platform_device *pdev)
 	int i;
 	struct motor_device *mdev = platform_get_drvdata(pdev);
 	struct motor_driver *motor = NULL;
+	motor_dbg("remove\n");
+	/* drop the user-facing entry points first, then the hardware */
+	misc_deregister(&mdev->misc_dev);
+	if (mdev->proc)
+		proc_remove(mdev->proc);
+
 	ingenic_tcu_counter_stop(mdev->tcu);
 	mutex_destroy(&mdev->dev_mutex);
 
@@ -1051,12 +1122,7 @@ static int motor_remove(struct platform_device *pdev)
 		del_timer_sync(&motor->max_timer);
 	}
 
-	if (mdev->proc)
-		proc_remove(mdev->proc);
-
-	misc_deregister(&mdev->misc_dev);
-
-	kfree(mdev);
+	/* mdev is devm-allocated and released with the device */
 	return 0;
 }
 
@@ -1069,7 +1135,7 @@ static struct platform_driver motor_driver = {
 	.probe = motor_probe,
 	.remove = motor_remove,
 	.driver = {
-		.name	= "tcu_chn2",
+		.name	= "ingenic,tcu_chn2",
 		.of_match_table = motor_match,
 		.owner	= THIS_MODULE,
 	}
