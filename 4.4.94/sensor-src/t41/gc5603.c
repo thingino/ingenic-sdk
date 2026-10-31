@@ -1035,19 +1035,11 @@ static int sensor_attr_check(struct tx_isp_subdev *sd)
 
 	switch (info->mclk) {
 		case TISP_SENSOR_MCLK0:
-			sclka = private_devm_clk_get(&client->dev, "mux_cim0");
-			sensor->mclk = private_devm_clk_get(sensor->dev, "div_cim0");
-			set_sensor_mclk_function(0);
-			break;
 		case TISP_SENSOR_MCLK1:
-			sclka = private_devm_clk_get(&client->dev, "mux_cim1");
-			sensor->mclk = private_devm_clk_get(sensor->dev, "div_cim1");
-			set_sensor_mclk_function(1);
-			break;
 		case TISP_SENSOR_MCLK2:
-			sclka = private_devm_clk_get(&client->dev, "mux_cim2");
-			sensor->mclk = private_devm_clk_get(sensor->dev, "div_cim2");
-			set_sensor_mclk_function(2);
+			sclka = private_devm_clk_get(&client->dev, SEN_MCLK);
+			sensor->mclk = private_devm_clk_get(sensor->dev, SEN_BCLK);
+			set_sensor_mclk_function(0);
 			break;
 		default:
 			ISP_ERROR("Have no this MCLK Source!!!\n");
@@ -1060,14 +1052,14 @@ static int sensor_attr_check(struct tx_isp_subdev *sd)
 
 	rate = private_clk_get_rate(sensor->mclk);
 	if (((rate / 1000) % 27000) != 0) {
-		ret = clk_set_parent(sclka, clk_get(NULL, "epll"));
-		sclka = private_devm_clk_get(&client->dev, "epll");
+		ret = clk_set_parent(sclka, clk_get(NULL, SEN_TCLK));
+		sclka = private_devm_clk_get(&client->dev, SEN_TCLK);
 		if (IS_ERR(sclka)) {
 			pr_err("get sclka failed\n");
 		} else {
 			rate = private_clk_get_rate(sclka);
 			if (((rate / 1000) % 27000) != 0) {
-				private_clk_set_rate(sclka, 891000000);
+				private_clk_set_rate(sclka, 1080000000);
 			}
 		}
 	}
