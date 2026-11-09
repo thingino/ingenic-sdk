@@ -287,7 +287,7 @@ struct tx_isp_sensor_attribute sensor_attr = {
  * rowtime 22.2222us
  * pattern grbg
  */
-static struct regval_list sensor_init_regs_2560_1440_25fps_mipi[] = {
+static struct regval_list sensor_init_regs_2560_1440_30fps_mipi[] = {
 	/* SYS */
 	{0x03fe, 0xf0},
 	{0x03fe, 0x00},
@@ -921,7 +921,7 @@ static struct tx_isp_sensor_win_setting sensor_win_sizes[] = {
 		.fps = 30 << 16 | 1,
 		.mbus_code = V4L2_MBUS_FMT_SGRBG10_1X10,
 		.colorspace = V4L2_COLORSPACE_SRGB,
-		.regs = sensor_init_regs_2560_1440_25fps_mipi,
+		.regs = sensor_init_regs_2560_1440_30fps_mipi,
 	},
 #ifdef __WDR__
 	/* 2560*1440 @ max 15fps mipi*/
