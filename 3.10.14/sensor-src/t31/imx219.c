@@ -52,7 +52,7 @@
 // SENSOR IDENTIFICATION
 // ============================================================================
 #define SENSOR_NAME "imx219"
-#define SENSOR_VERSION "H20260828c"
+#define SENSOR_VERSION "H20260901a"
 #define SENSOR_CHIP_ID 0x0219
 #define SENSOR_CHIP_ID_H (0x02)
 #define SENSOR_CHIP_ID_L (0x19)
@@ -400,7 +400,7 @@ struct tx_isp_sensor_attribute sensor_attr = {
     .cbus_device = SENSOR_I2C_ADDRESS,
     .dbus_type = TX_SENSOR_DATA_INTERFACE_MIPI,
     .mipi = {
-        .mode = SENSOR_MIPI_OTHER_MODE,
+        .mode = SENSOR_MIPI_SONY_MODE,
         /* 2-lane MIPI (standard Raspberry Pi Camera v2 wiring; IMX219
          * register 0x0114 is explicitly set to 2-lane mode in the init
          * table below). clk (Mbps/lane) = pixel_rate * bpp / lanes / 1e6
@@ -408,7 +408,7 @@ struct tx_isp_sensor_attribute sensor_attr = {
          * link_freq * 2 / 1e6 = 456,000,000 * 2 / 1e6 = 912. */
         .clk = 912,
         .lans = 2,
-        .settle_time_apative_en = 1,
+        .settle_time_apative_en = 0,
         .mipi_sc.sensor_csi_fmt = TX_SENSOR_RAW10,
         .mipi_sc.hcrop_diff_en = 0,
         .mipi_sc.mipi_vcomp_en = 0,
@@ -451,9 +451,8 @@ struct tx_isp_sensor_attribute sensor_attr = {
 };
 
 /* 1920x1080@30fps mode regs (mainline mode_1920_1080_regs verbatim, plus
- * explicit VTS write per the OV5647-port lesson), terminated with
- * stream-on (0x0100=0x01) matching this SDK's own convention of baking
- * initial stream-on into the mode-set table. */
+ * explicit VTS write per the OV5647-port lesson). sensor_init() applies
+ * the common RAW10 format registers and starts streaming after this table. */
 static struct regval_list sensor_init_regs_1920_1080_mipi[] = {
     {0x0100, 0x00},
     {0x30eb, 0x05},
@@ -511,8 +510,6 @@ static struct regval_list sensor_init_regs_1920_1080_mipi[] = {
     {0x4793, 0x10},
     {0x4797, 0x0e},
     {0x479b, 0x0e},
-    {0x0100, 0x01},
-
     {SENSOR_REG_END, 0x00},
 };
 
@@ -584,8 +581,6 @@ static struct regval_list sensor_init_regs_1632_1232_mipi[] = {
     {0x0163, 0x78},
     {0x0160, 0x06},
     {0x0161, 0xe3},
-    {0x0100, 0x01},
-
     {SENSOR_REG_END, 0x00},
 };
 
@@ -649,8 +644,6 @@ static struct regval_list sensor_init_regs_3280_2464_mipi[] = {
     {0x0163, 0x78},
     {0x0160, 0x0d},
     {0x0161, 0xc6},
-    {0x0100, 0x01},
-
     {SENSOR_REG_END, 0x00},
 };
 
@@ -715,8 +708,6 @@ static struct regval_list sensor_init_regs_640_480_mipi[] = {
     {0x479b, 0x0e},
     {0x0160, 0x06},
     {0x0161, 0xe3},
-    {0x0100, 0x01},
-
     {SENSOR_REG_END, 0x00},
 };
 
@@ -756,6 +747,16 @@ static struct tx_isp_sensor_win_setting sensor_win_sizes[] = {
 };
 
 struct tx_isp_sensor_win_setting *wsize = &sensor_win_sizes[0];
+
+/* Linux v5.15 imx219_set_framefmt() writes these after the selected mode
+ * table and before stream-on. Without them the driver advertises RAW10 to
+ * TX-ISP without explicitly configuring RAW10 output on the sensor. */
+static struct regval_list sensor_raw10_framefmt[] = {
+    {0x018c, 0x0a},
+    {0x018d, 0x0a},
+    {0x0309, 0x0a},
+    {SENSOR_REG_END, 0x00},
+};
 
 static struct regval_list sensor_stream_on_mipi[] = {
     {0x0100, 0x01},
@@ -945,6 +946,16 @@ static int sensor_init(struct tx_isp_subdev *sd, int enable)
     sensor->video.fps = wsize->fps;
 
     ret = sensor_write_array(sd, wsize->regs);
+    if (ret) {
+        return ret;
+    }
+
+    ret = sensor_write_array(sd, sensor_raw10_framefmt);
+    if (ret) {
+        return ret;
+    }
+
+    ret = sensor_write_array(sd, sensor_stream_on_mipi);
     if (ret) {
         return ret;
     }
