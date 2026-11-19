@@ -41,10 +41,16 @@ A finding says that two places in one driver disagree. It does not say which
 of them is right: that takes the sensor's datasheet or a measurement.
 
 A run can be compared with a saved one: --write-baseline FILE records the
-findings, --baseline FILE lists only those that are not in it. With
---fail-on, a driver that cannot be parsed fails the run like a finding. A
-baseline names such a driver (not_analysed) and keeps the entries an earlier
-baseline had for it, since the run that writes it could not look.
+findings, --baseline FILE lists only those that are not in it. A baseline
+is for findings only: it names a driver that could not be analysed
+(not_analysed) and keeps the entries an earlier baseline had for it, since
+the run that writes it could not look, but it excuses no such driver.
+
+Exit status: 0; 1 when a driver could not be analysed (it does not parse, or
+the checker gave up on it), whatever else was asked; 1 also for a finding of
+--fail-on SEVERITY or worse, and with --strict for a driver in which no mode
+was found; 2 for a command line or a baseline that cannot be used. What
+failed the run is said on stderr.
 
 Needs Python 3.7 or later (it relies on dicts keeping insertion order);
 tested with 3.11, 3.12 and 3.14. Standard library only. The tests are in
@@ -3088,8 +3094,12 @@ def main(argv=None):
                          "replaced")
     ap.add_argument("--fail-on", choices=SEVERITIES, default=None,
                     help="exit 1 when a finding of this severity or worse exists (whatever "
-                         "--min-severity lists; with --baseline, a finding not in it), or when "
-                         "a driver could not be analysed")
+                         "--min-severity lists; with --baseline, a finding not in it). A "
+                         "driver that could not be analysed fails the run with or without "
+                         "this option")
+    ap.add_argument("--strict", action="store_true",
+                    help="exit 1 also when a driver has no resolvable mode, and list those "
+                         "drivers as --unparsed does")
     ap.add_argument("--list-checks", action="store_true")
     opts = ap.parse_args(argv)
     if opts.json:
@@ -3249,7 +3259,7 @@ def main(argv=None):
             for r in results:
                 for note in r.notes:
                     print("NOTE   %s: %s" % (r.rel, note))
-        if opts.unparsed:
+        if opts.unparsed or opts.strict:
             print("")
             for r in results:
                 if r.status == "no-modes":
@@ -3291,11 +3301,25 @@ def main(argv=None):
         tot = [sum(d[s] for d in summary["findings"].values()) for s in SEVERITIES]
         print("%-18s %6d %6d %6d" % ("total", tot[0], tot[1], tot[2]))
 
+    # A driver that could not be analysed is never a clean result: the run
+    # says nothing about it, so it fails whatever was asked for, and no
+    # baseline excuses it. A driver without modes is a gap in coverage: it
+    # is counted in the summary and fails the run only with --strict.
+    why = []
+    if errors:
+        why.append("%d driver%s could not be analysed" % (len(errors), "" if len(errors) == 1 else "s"))
+    if opts.strict and summary["no_modes"]:
+        why.append("%d driver%s without resolvable modes (--strict)"
+                   % (summary["no_modes"], "" if summary["no_modes"] == 1 else "s"))
     if opts.fail_on is not None:
-        # every finding counts, whatever --min-severity lists; and a driver
-        # that could not be analysed is a failure, not a clean result
-        if errors or any(rank[fd.severity] <= rank[opts.fail_on] for fd in fresh):
-            return 1
+        # every finding counts, whatever --min-severity lists
+        n = sum(1 for fd in fresh if rank[fd.severity] <= rank[opts.fail_on])
+        if n:
+            why.append("%d %sfinding%s of severity %s or worse (--fail-on)"
+                       % (n, "new " if known is not None else "", "" if n == 1 else "s", opts.fail_on))
+    if why:
+        sys.stderr.write("failed: %s\n" % "; ".join(why))
+        return 1
     return 0
 
 

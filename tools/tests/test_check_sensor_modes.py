@@ -84,9 +84,11 @@ class FixtureTree(unittest.TestCase):
         return [f for f in self.data["findings"]
                 if f["file"] == rel and (check is None or f["check"] == check)]
 
-    def test_runs_clean_without_fail_on(self):
-        self.assertEqual(self.code, 0)
+    def test_whole_tree_fails_for_the_file_that_does_not_parse(self):
+        # fx_broken is in the tree; every other result is still reported
+        self.assertEqual(self.code, 1)
         self.assertEqual(self.data["version"], csm.VERSION)
+        self.assertEqual(self.data["summary"]["analysed"], self.data["summary"]["drivers"] - 1)
 
     def test_expected_output(self):
         got = dict(self.data)
@@ -188,13 +190,27 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(run("--driver", "fx_ppif", "--fail-on", "medium")[0], 0)
         self.assertEqual(run("--driver", "fx_ppif")[0], 0)
 
-    def test_fail_on_fails_on_a_file_that_does_not_parse(self):
-        code, out, _ = run("--driver", "fx_broken", "--fail-on", "high")
+    def test_a_file_that_does_not_parse_fails_every_run(self):
+        for args in ((), ("--fail-on", "high"), ("--min-severity", "low"), ("--strict",)):
+            code, out, err = run("--driver", "fx_broken", *args)
+            self.assertEqual(code, 1, args)
+            self.assertIn("ERROR  not-analysed", out)
+            self.assertEqual(err, "failed: 1 driver could not be analysed\n")
+        # the JSON output is whole all the same
+        code, data = run_json("--driver", "fx_broken", "--driver", "gc2053")
         self.assertEqual(code, 1)
-        self.assertIn("ERROR  not-analysed", out)
-        code, out, _ = run("--driver", "fx_broken")
-        self.assertEqual(code, 0)
-        self.assertIn("ERROR  not-analysed", out)
+        self.assertEqual(data["summary"]["errors"], 1)
+        self.assertEqual(len(data["findings"]), 2)
+        # and a run that does not include the file is clean
+        self.assertEqual(run("--driver", "gc2053")[0::2], (0, ""))
+
+    def test_stderr_says_what_failed(self):
+        code, _, err = run("--driver", "gc2053", "--driver", "fx_broken", "--fail-on", "medium")
+        self.assertEqual(code, 1)
+        self.assertEqual(err, "failed: 1 driver could not be analysed; "
+                              "2 findings of severity medium or worse (--fail-on)\n")
+        code, _, err = run("--driver", "fx_ppif", "--fail-on", "low")
+        self.assertEqual(err, "failed: 1 finding of severity low or worse (--fail-on)\n")
 
     def test_unknown_check_name_is_refused(self):
         code, _, err = run("--driver", "gc2053", "--check", "byteorder")
@@ -288,9 +304,10 @@ class CommandLine(unittest.TestCase):
             self.assertEqual(load(path)["not_analysed"], [])
             os.remove(path)
 
-            # no earlier baseline: the file is named, and the run says so
+            # no earlier baseline: the file is named, and the run says so. The
+            # baseline is written, and the run fails for the file all the same
             code, _, err = run("--write-baseline", path, "--driver", "fx_broken")
-            self.assertEqual(code, 0)
+            self.assertEqual(code, 1)
             self.assertIn("1 driver not analysed (%s)" % broken, err)
             self.assertIn("no earlier baseline", err)
             base = load(path)
@@ -304,7 +321,7 @@ class CommandLine(unittest.TestCase):
             base["findings"] = [kept, too_low, analysed]
             dump(path, base)
             code, _, err = run("--write-baseline", path, "--driver", "fx_broken", "--driver", "gc2053")
-            self.assertEqual(code, 0)
+            self.assertEqual(code, 1)
             self.assertIn("1 of their entries kept from", err)
             base = load(path)
             self.assertEqual(base["not_analysed"], [broken])
@@ -340,6 +357,50 @@ class CommandLine(unittest.TestCase):
             # with every driver analysed there is nothing to keep, and it is replaced
             self.assertEqual(run("--write-baseline", path, "--driver", "gc2053")[0], 0)
             self.assertEqual(load(path)["not_analysed"], [])
+
+
+class Strict(unittest.TestCase):
+    """A driver in which no mode is found: counted always, fatal on request."""
+
+    def run_root(self, root, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = csm.main(["--root", root] + list(args))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_driver_without_modes(self):
+        with tempfile.TemporaryDirectory() as root:
+            for rel in (GC2053, "4.4.94/isp/t31/include/tx-isp-common.h"):
+                os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+                shutil.copyfile(os.path.join(TREE, rel), os.path.join(root, rel))
+            empty = "4.4.94/sensor-src/t31/nomodes.c"
+            with open(os.path.join(root, empty), "w", encoding="utf-8", newline="\n") as fh:
+                fh.write("/* parses, and describes no sensor mode */\nstatic int unused;\n")
+
+            # counted, not listed and not fatal
+            code, out, err = self.run_root(root)
+            self.assertEqual((code, err), (0, ""))
+            self.assertIn("2 files (2 distinct), 1 analysed, 1 without resolvable modes, 0 not parsed", out)
+            self.assertNotIn("NO-MODES", out)
+            # nor with --fail-on: it is not a finding
+            self.assertEqual(self.run_root(root, "--driver", "nomodes", "--fail-on", "low")[0], 0)
+
+            # --strict: listed with its reason, and fatal
+            code, out, err = self.run_root(root, "--strict")
+            self.assertEqual(code, 1)
+            self.assertIn("NO-MODES  %s: " % empty, out)
+            self.assertEqual(err, "failed: 1 driver without resolvable modes (--strict)\n")
+            code, out, _ = self.run_root(root, "--strict", "--json")
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads(out)["summary"]["no_modes"], 1)
+
+            # --strict on drivers that all have modes changes nothing
+            self.assertEqual(self.run_root(root, "--strict", "--driver", "gc2053")[0::2], (0, ""))
+
+    def test_strict_on_the_fixture_tree(self):
+        # no driver without modes there; fx_broken fails the run by itself
+        self.assertEqual(run("--strict", "--driver", "gc2053", "--driver", "jxf32")[0], 0)
+        self.assertEqual(run("--strict")[2], "failed: 1 driver could not be analysed\n")
 
 
 @unittest.skipUnless(shutil.which("git"), "git is not installed")
