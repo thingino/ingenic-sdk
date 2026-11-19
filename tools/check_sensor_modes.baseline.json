@@ -1,11 +1,14 @@
 {
- "version": "2",
+ "version": "3",
  "tree": {
-  "commit": "ad6e2903d027bcfc6bc860721c82f7d8f79fdd85",
+  "drivers_commit": "89636064d1bfef941ab539ec578c5ff5749b4de4",
   "dirty": false
  },
  "min_severity": "medium",
  "checks": null,
+ "not_analysed": [
+  "3.10.14/sensor-src/t23/gc4653.c"
+ ],
  "findings": [
   {
    "file": "3.10.14/sensor-src/t20/gc1034.c",
