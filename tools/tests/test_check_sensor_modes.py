@@ -33,6 +33,8 @@ import contextlib
 import io
 import json
 import os
+import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -267,6 +269,171 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("cannot read baseline", err)
 
+    def test_write_baseline_keeps_the_entries_of_a_file_not_analysed(self):
+        broken = FX % "broken"
+
+        def load(path):
+            with open(path, "r", encoding="utf-8") as fh:
+                return json.load(fh)
+
+        def dump(path, data):
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "baseline.json")
+            # every driver analysed: the list is there, and empty
+            code, _, err = run("--write-baseline", path, "--driver", "gc2053")
+            self.assertEqual((code, err), (0, ""))
+            self.assertEqual(load(path)["not_analysed"], [])
+            os.remove(path)
+
+            # no earlier baseline: the file is named, and the run says so
+            code, _, err = run("--write-baseline", path, "--driver", "fx_broken")
+            self.assertEqual(code, 0)
+            self.assertIn("1 driver not analysed (%s)" % broken, err)
+            self.assertIn("no earlier baseline", err)
+            base = load(path)
+            self.assertEqual((base["not_analysed"], base["findings"]), ([broken], []))
+
+            # the file being replaced has entries for it: those within what this
+            # run lists are kept, and nothing else is taken from the old file
+            kept = {"file": broken, "check": "frame-short", "mode": "m", "severity": "high"}
+            too_low = dict(kept, check="table-name", severity="low")
+            analysed = {"file": GC2053, "check": "frame-short", "mode": "no such mode", "severity": "high"}
+            base["findings"] = [kept, too_low, analysed]
+            dump(path, base)
+            code, _, err = run("--write-baseline", path, "--driver", "fx_broken", "--driver", "gc2053")
+            self.assertEqual(code, 0)
+            self.assertIn("1 of their entries kept from", err)
+            base = load(path)
+            self.assertEqual(base["not_analysed"], [broken])
+            self.assertIn(kept, base["findings"])
+            self.assertNotIn(too_low, base["findings"])
+            self.assertNotIn(analysed, base["findings"])
+            self.assertEqual(len(base["findings"]), 3)      # and the two of gc2053
+            # written twice, the same file
+            run("--write-baseline", path, "--driver", "fx_broken", "--driver", "gc2053")
+            self.assertEqual(load(path), base)
+            # a run limited to other checks does not carry the entry over
+            other = os.path.join(tmp, "other.json")
+            run("--baseline", path, "--write-baseline", other, "--driver", "fx_broken",
+                "--check", "byte-order")
+            self.assertEqual(load(other)["findings"], [])
+
+            # --baseline names the earlier file when another one is written
+            run("--baseline", path, "--write-baseline", other, "--driver", "fx_broken")
+            self.assertEqual(load(other)["findings"], [kept])
+
+            # with the kept entry the file still fails a gate: it is not analysed
+            self.assertEqual(run("--baseline", path, "--fail-on", "high", "--driver", "fx_broken")[0], 1)
+
+            # an earlier baseline that cannot be read, and a file not analysed:
+            # nothing is written
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("not json")
+            code, _, err = run("--write-baseline", path, "--driver", "fx_broken")
+            self.assertEqual(code, 2)
+            self.assertIn("is not written", err)
+            with open(path, "r", encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), "not json")
+            # with every driver analysed there is nothing to keep, and it is replaced
+            self.assertEqual(run("--write-baseline", path, "--driver", "gc2053")[0], 0)
+            self.assertEqual(load(path)["not_analysed"], [])
+
+
+@unittest.skipUnless(shutil.which("git"), "git is not installed")
+class TreeIdentity(unittest.TestCase):
+    """What the JSON output and a baseline say about the checkout."""
+
+    def git(self, *args):
+        return subprocess.run(
+            ("git", "-C", self.root, "-c", "user.name=test", "-c", "user.email=test@example.invalid",
+             "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false") + args,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, check=True).stdout.strip()
+
+    def run_root(self, *args):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = csm.main(["--root", self.root] + list(args))
+        return code, out.getvalue()
+
+    def test_baseline_names_the_drivers_commit_not_head(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.root = os.path.join(tmp, "sdk")
+            base = os.path.join(self.root, "tools", "baseline.json")
+            for rel in (GC2053, "4.4.94/isp/t31/include/tx-isp-common.h"):
+                os.makedirs(os.path.dirname(os.path.join(self.root, rel)), exist_ok=True)
+                shutil.copyfile(os.path.join(TREE, rel), os.path.join(self.root, rel))
+            os.makedirs(os.path.dirname(base))
+            self.git("init", "-q")
+            self.git("add", "-A")
+            self.git("commit", "-q", "-m", "drivers")
+            drivers = self.git("rev-parse", "HEAD")
+
+            self.assertEqual(self.run_root("--write-baseline", base)[0], 0)
+            with open(base, "r", encoding="utf-8") as fh:
+                first = fh.read()
+            self.assertEqual(json.loads(first)["tree"], {"drivers_commit": drivers, "dirty": False})
+
+            # the baseline is committed: HEAD moves, the drivers' commit does not,
+            # so writing it again changes nothing
+            self.git("add", "-A")
+            self.git("commit", "-q", "-m", "baseline")
+            head = self.git("rev-parse", "HEAD")
+            self.assertNotEqual(head, drivers)
+            code, out = self.run_root("--json", "--write-baseline", base)
+            self.assertEqual(json.loads(out)["tree"],
+                             {"commit": head, "drivers_commit": drivers, "dirty": False})
+            with open(base, "r", encoding="utf-8") as fh:
+                self.assertEqual(fh.read(), first)
+            self.assertIn("drivers last changed in " + drivers[:12], self.run_root()[1])
+
+            # an uncommitted change of a driver is said; one outside the drivers is not
+            with open(os.path.join(self.root, "tools", "note.txt"), "w") as fh:
+                fh.write("x\n")
+            self.git("add", "-A")
+            self.assertFalse(json.loads(self.run_root("--json")[1])["tree"]["dirty"])
+            with open(os.path.join(self.root, GC2053), "a") as fh:
+                fh.write("\n")
+            self.assertTrue(json.loads(self.run_root("--json")[1])["tree"]["dirty"])
+
+            # a commit that changes a driver moves it
+            self.git("commit", "-q", "-a", "-m", "driver change")
+            moved = self.git("rev-parse", "HEAD")
+            self.assertEqual(json.loads(self.run_root("--json")[1])["tree"]["drivers_commit"], moved)
+
+            # one to another part of the same kernel folder does not, and is not
+            # a driver change while uncommitted; one to a header that is read does
+            for rel in ("4.4.94/misc/motor/motor.c", "4.4.94/isp/t31/tx-isp-core.c"):
+                os.makedirs(os.path.dirname(os.path.join(self.root, rel)), exist_ok=True)
+                with open(os.path.join(self.root, rel), "w") as fh:
+                    fh.write("/* not a sensor driver */\n")
+            self.git("add", "-A")
+            self.assertFalse(json.loads(self.run_root("--json")[1])["tree"]["dirty"])
+            self.git("commit", "-q", "-m", "motor")
+            tree = json.loads(self.run_root("--json")[1])["tree"]
+            self.assertEqual((tree["drivers_commit"], tree["dirty"]), (moved, False))
+            with open(os.path.join(self.root, "4.4.94/isp/t31/include/tx-isp-common.h"), "a") as fh:
+                fh.write("\n")
+            self.assertTrue(json.loads(self.run_root("--json")[1])["tree"]["dirty"])
+            self.git("commit", "-q", "-a", "-m", "header")
+            self.assertEqual(json.loads(self.run_root("--json")[1])["tree"]["drivers_commit"],
+                             self.git("rev-parse", "HEAD"))
+
+    def test_not_the_top_of_a_work_tree(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.root = os.path.join(tmp, "sdk")
+            for rel in (GC2053, "4.4.94/isp/t31/include/tx-isp-common.h"):
+                os.makedirs(os.path.dirname(os.path.join(self.root, rel)), exist_ok=True)
+                shutil.copyfile(os.path.join(TREE, rel), os.path.join(self.root, rel))
+            code, out = self.run_root("--json")
+            self.assertIsNone(json.loads(out)["tree"])
+            base = os.path.join(tmp, "baseline.json")
+            self.run_root("--write-baseline", base)
+            with open(base, "r", encoding="utf-8") as fh:
+                self.assertIsNone(json.load(fh)["tree"])
+
 
 class PreprocessorExpressions(unittest.TestCase):
     DEFINES = {"FLAGS": ("3", 1), "NEXT": ("(FLAGS + 1)", 2), "EMPTY": ("", 3),
@@ -288,10 +455,36 @@ class PreprocessorExpressions(unittest.TestCase):
 
     def test_not_read_is_false_and_reported(self):
         for text in ("9**9**9", "1/0", "1 % 0", "1 << 64", "1 << -1", "VERSION(4,4,0) > 1", "EMPTY",
-                     "LOOP_A", "1 +", "(1", "1 2", "__import__('os').system('true')", "'a' == 97"):
+                     "LOOP_A", "1 +", "(1", "1 2", "__import__('os').system('true')",
+                     "08", "0x", "'ab'", "''", "'\\xff'", "'\\400'", "L'a'", "'a"):
             unread = []
             self.assertFalse(csm.pp_condition("if", text, self.DEFINES, unread, 7), text)
             self.assertEqual([(u[0], u[1]) for u in unread], [(7, text)], text)
+
+    def test_operand_c_does_not_evaluate(self):
+        # the right side of && and ||, and the arm of ?: that is not taken
+        defines = dict(self.DEFINES, DIV0=("(1/0)", 6))
+        for text, want in (("0 && (1/0)", 0), ("1 || (1/0)", 1), ("1 ? 2 : (1/0)", 2),
+                           ("0 ? (1/0) : 3", 3), ("0 && DIV0", 0), ("1 || 1 << 99", 1),
+                           ("1 || 0 && (1/0)", 1), ("(0 && 1/0) + 2", 2), ("0 && 1 || 1", 1),
+                           ("0 ? 1 << 64 : 5", 5), ("defined(NOPE) && NOPE / NOPE", 0),
+                           ("0 || 2", 1), ("2 && 3", 1), ("0 && (1 ? 1/0 : 1/0)", 0)):
+            self.assertEqual(csm.pp_eval(text, defines), want, text)
+        # evaluated all the same when the left side does not decide
+        for text in ("1 && (1/0)", "0 || (1/0)", "1 ? (1/0) : 2", "0 ? 2 : (1/0)", "1 && DIV0"):
+            self.assertRaises(ValueError, csm.pp_eval, text, defines)
+        # and still read: what is not an expression is refused there too
+        for text in ("0 && (1", "0 && VERSION(4,4,0)", "0 && EMPTY", "0 && 1 2", "1 || 08",
+                     "1 ? 2 :", "1 || LOOP_A"):
+            self.assertRaises(ValueError, csm.pp_eval, text, defines)
+
+    def test_octal_and_character_constants(self):
+        for text, want in (("010", 8), ("0", 0), ("00", 0), ("0777", 511), ("010UL", 8), ("10", 10),
+                           ("0x10", 16), ("'a'", 97), ("'A' == 65", 1), ("'0' + 1", 49), ("' '", 32),
+                           ("'\\n'", 10), ("'\\t'", 9), ("'\\0'", 0), ("'\\\\'", 92), ("'\\''", 39),
+                           ("'\"'", 34), ("'\\\"'", 34), ("'\\x41'", 65), ("'\\101'", 65),
+                           ("'\\x7f'", 127), ("'/' / '/'", 1)):
+            self.assertEqual(csm.pp_eval(text, {}), want, text)
 
     def test_ifdef(self):
         self.assertTrue(csm.pp_condition("ifdef", "FLAGS", self.DEFINES))

@@ -42,7 +42,9 @@ of them is right: that takes the sensor's datasheet or a measurement.
 
 A run can be compared with a saved one: --write-baseline FILE records the
 findings, --baseline FILE lists only those that are not in it. With
---fail-on, a driver that cannot be parsed fails the run like a finding.
+--fail-on, a driver that cannot be parsed fails the run like a finding. A
+baseline names such a driver (not_analysed) and keeps the entries an earlier
+baseline had for it, since the run that writes it could not look.
 
 Needs Python 3.7 or later (it relies on dicts keeping insertion order);
 tested with 3.11, 3.12 and 3.14. Standard library only. The tests are in
@@ -59,7 +61,7 @@ import re
 import subprocess
 import sys
 
-VERSION = "2"       # of the output format (--json, --write-baseline)
+VERSION = "3"       # of the output format (--json, --write-baseline)
 
 SEVERITIES = ("high", "medium", "low")
 
@@ -171,17 +173,25 @@ def pp_condition(kw, rest, defines, unread=None, line=0):
 
 
 _PP_TOKEN = re.compile(r"\s*(?:(0[xX][0-9a-fA-F]+|\d+)[uUlL]*|([A-Za-z_]\w*)"
-                       r"|(\|\||&&|==|!=|<=|>=|<<|>>|[-+*/%&|^~!<>()?:]))")
+                       r"|(\|\||&&|==|!=|<=|>=|<<|>>|[-+*/%&|^~!<>()?:])"
+                       r"|'([^'\\\n]|\\(?:[abfnrtv\\'\"?]|x[0-9a-fA-F]{1,2}|[0-7]{1,3}))')")
+
+_PP_ESCAPES = {"a": 7, "b": 8, "f": 12, "n": 10, "r": 13, "t": 9, "v": 11,
+               "\\": 92, "'": 39, '"': 34, "?": 63}
 
 _PP_BINARY = (("||",), ("&&",), ("|",), ("^",), ("&",), ("==", "!="),
               ("<", "<=", ">", ">="), ("<<", ">>"), ("+", "-"), ("*", "/", "%"))
 
 
-def pp_eval(text, defines, depth=0):
-    """Value of a #if expression: integer constants, defined(), object-like
-    macros of this file, and C's integer operators. Raises ValueError for
-    anything else (a function-like macro, a division by zero, a shift by
-    64 or more), so that nothing is ever handed to eval()."""
+def pp_eval(text, defines, depth=0, dead=False):
+    """Value of a #if expression: integer and character constants, defined(),
+    object-like macros of this file, and C's integer operators. Raises
+    ValueError for anything else (a function-like macro, a division by zero,
+    a shift by 64 or more), so that nothing is ever handed to eval().
+
+    As in C, the right side of && and || and the arm of ?: that is not taken
+    are parsed and not evaluated: "0 && (1/0)" is 0. "dead" says that the
+    whole text is such an operand (a macro expanded inside one)."""
     if depth > 16:
         raise ValueError("macro nesting")
     toks = []
@@ -193,7 +203,16 @@ def pp_eval(text, defines, depth=0):
             raise ValueError("unexpected %r" % text[pos:pos + 8])
         toks.append((m.lastindex, m.group(m.lastindex)))
         pos = m.end()
-    state = [0]
+    state = [0, 1 if dead else 0]       # position; depth of operands not evaluated
+
+    def skipped(fn):
+        """Parse an operand C does not evaluate: a syntax error in it is
+        still an error, a division by zero or an oversized shift is not."""
+        state[1] += 1
+        try:
+            return fn()
+        finally:
+            state[1] -= 1
 
     def peek():
         return toks[state[0]][1] if state[0] < len(toks) else None
@@ -208,7 +227,24 @@ def pp_eval(text, defines, depth=0):
     def primary():
         kind, t = take()
         if kind == 1:
+            if len(t) > 1 and t[0] == "0" and t[1] not in "xX":
+                if t.strip("01234567"):
+                    raise ValueError("%s is not an octal constant" % t)
+                return int(t, 8)
             return int(t, 0)
+        if kind == 4:
+            if t[0] != "\\":
+                v = ord(t)
+            elif t[1] == "x":
+                v = int(t[2:], 16)
+            elif t[1] in "01234567":
+                v = int(t[1:], 8)
+            else:
+                v = _PP_ESCAPES[t[1]]
+            if v > 127:
+                # signed on some targets and unsigned on others
+                raise ValueError("character constant above 127")
+            return v
         if kind == 2:
             if t == "defined":
                 paren = peek() == "("
@@ -227,7 +263,7 @@ def pp_eval(text, defines, depth=0):
                 return 0        # C: an identifier that is not a macro is 0
             if not body[0].strip():
                 raise ValueError("macro %s has no value" % t)
-            return pp_eval(body[0], defines, depth + 1)
+            return pp_eval(body[0], defines, depth + 1, state[1] > 0)
         if t == "(":
             v = ternary()
             if take()[1] != ")":
@@ -249,12 +285,18 @@ def pp_eval(text, defines, depth=0):
         a = binary(level + 1)
         while peek() in _PP_BINARY[level]:
             op = take()[1]
+            if op in ("||", "&&"):
+                if bool(a) == (op == "||"):     # decided by the left side
+                    skipped(lambda: binary(level + 1))
+                    a = int(op == "||")
+                else:
+                    a = int(bool(binary(level + 1)))
+                continue
             b = binary(level + 1)
-            if op == "||":
-                a = int(bool(a) or bool(b))
-            elif op == "&&":
-                a = int(bool(a) and bool(b))
-            elif op == "|":
+            if state[1]:
+                a = 0       # not evaluated: only its syntax counts
+                continue
+            if op == "|":
                 a |= b
             elif op == "^":
                 a ^= b
@@ -296,10 +338,10 @@ def pp_eval(text, defines, depth=0):
         c = binary(0)
         if peek() == "?":
             take()
-            a = ternary()
+            a = ternary() if c else skipped(ternary)
             if take()[1] != ":":
                 raise ValueError("? without :")
-            b = ternary()
+            b = skipped(ternary) if c else ternary()
             return a if c else b
         return c
 
@@ -2949,10 +2991,14 @@ def find_drivers(root, patterns, follow_links=False):
 
 
 def tree_identity(root):
-    """The commit the drivers were read from, when root is the top of a git
-    work tree; None otherwise (a tarball, a subdirectory, no git). "dirty"
-    says that a tracked file under the kernel-version folders, where the
-    drivers and their headers are, differs from that commit."""
+    """Which drivers were read, when root is the top of a git work tree; None
+    otherwise (a tarball, a subdirectory, no git). "commit" is the checkout's
+    HEAD. "drivers_commit" is the last commit that changed a file this tool
+    reads: the sensor-src folders and the headers under isp/<soc>/include.
+    Unlike HEAD it does not move when only this tool or another part of the
+    SDK changes, so a baseline can be committed without naming a commit
+    older than itself. It is None in a shallow clone, whose history does not
+    say. "dirty" says that a tracked file among those differs from HEAD."""
     def git(*args):
         try:
             r = subprocess.run(("git", "-C", root) + args, stdout=subprocess.PIPE,
@@ -2967,8 +3013,13 @@ def tree_identity(root):
     if not head:
         return None
     kvers = sorted(d for d in os.listdir(root) if os.path.isdir(os.path.join(root, d, "sensor-src")))
+    read = [k + "/sensor-src" for k in kvers] + [":(glob)%s/isp/*/include/*.h" % k for k in kvers]
+    drivers = None
+    if kvers and git("rev-parse", "--is-shallow-repository") == "false":
+        drivers = git("log", "-1", "--format=%H", "--", *read) or None
     return {"commit": head,
-            "dirty": bool(git("status", "--porcelain", "--untracked-files=no", "--", *kvers))}
+            "drivers_commit": drivers,
+            "dirty": bool(kvers and git("status", "--porcelain", "--untracked-files=no", "--", *read))}
 
 
 def finding_key(fd):
@@ -2984,6 +3035,21 @@ def load_baseline(path):
     for e in data.get("findings", []):
         known[(e["file"], e["check"], e["mode"], e["severity"])] += 1
     return known
+
+
+def carried_entries(prev, not_analysed, checks, limit, rank):
+    """The entries of an earlier baseline for the files this run could not
+    analyse, within what this run lists: a baseline written now must not drop
+    them, or the file's findings would count as fixed."""
+    if not prev or not not_analysed:
+        return []
+    try:
+        known = load_baseline(prev)
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return sorted(k for k in known.elements()
+                  if k[0] in not_analysed and rank.get(k[3], len(rank)) <= limit
+                  and (not checks or k[1] in checks))
 
 
 def main(argv=None):
@@ -3016,7 +3082,10 @@ def main(argv=None):
                     help="a file written by --write-baseline: list, and with --fail-on count, only "
                          "the findings that are not in it")
     ap.add_argument("--write-baseline", metavar="FILE",
-                    help="record this run's findings of --min-severity and above in FILE")
+                    help="record this run's findings of --min-severity and above in FILE. A "
+                         "driver that could not be analysed is named there, and keeps the "
+                         "entries it has in --baseline or, without one, in the FILE being "
+                         "replaced")
     ap.add_argument("--fail-on", choices=SEVERITIES, default=None,
                     help="exit 1 when a finding of this severity or worse exists (whatever "
                          "--min-severity lists; with --baseline, a finding not in it), or when "
@@ -3090,20 +3159,37 @@ def main(argv=None):
         base_info["new"] = len(findings)
     tree = tree_identity(root)
 
+    ok = [r for r in results if r.status == "ok"]
+    errors = [r for r in results if r.status == "error"]
+
     if opts.write_baseline:
-        rows = sorted(finding_key(fd) for fd in counted if rank[fd.severity] <= limit)
+        rows = [finding_key(fd) for fd in counted if rank[fd.severity] <= limit]
+        # a driver that could not be analysed has no findings in this run:
+        # say so in the file, and keep what an earlier baseline holds for it
+        not_analysed = sorted(r.rel for r in errors)
+        prev = opts.baseline or (opts.write_baseline if os.path.isfile(opts.write_baseline) else None)
+        kept = carried_entries(prev, set(not_analysed), opts.check, limit, rank)
+        if kept is None:
+            sys.stderr.write("cannot read baseline %s to keep the entries of the drivers that "
+                             "were not analysed; %s is not written\n" % (prev, opts.write_baseline))
+            return 2
+        if not_analysed:
+            sys.stderr.write("baseline: %d driver%s not analysed (%s); %s\n" % (
+                len(not_analysed), "" if len(not_analysed) == 1 else "s", ", ".join(not_analysed),
+                "%d of their entries kept from %s" % (len(kept), prev) if prev
+                else "there is no earlier baseline to keep their entries from"))
+        rows = sorted(rows + kept)
         with open(opts.write_baseline, "w", encoding="utf-8", newline="\n") as fh:
             json.dump({
                 "version": VERSION,
-                "tree": tree,
+                "tree": ({"drivers_commit": tree["drivers_commit"], "dirty": tree["dirty"]}
+                         if tree else None),
                 "min_severity": opts.min_severity,
                 "checks": sorted(opts.check) or None,
+                "not_analysed": not_analysed,
                 "findings": [{"file": k[0], "check": k[1], "mode": k[2], "severity": k[3]} for k in rows],
             }, fh, indent=1)
             fh.write("\n")
-
-    ok = [r for r in results if r.status == "ok"]
-    errors = [r for r in results if r.status == "error"]
     left_out = collections.Counter()
     for r in results:
         left_out.update(r.left_out)
@@ -3170,7 +3256,10 @@ def main(argv=None):
                     print("%-9s %s: %s" % (r.status.upper(), r.rel, r.reason))
         print("")
         if tree:
-            print("Tree:    %s%s" % (tree["commit"], " (with uncommitted driver changes)" if tree["dirty"] else ""))
+            print("Tree:    %s%s%s" % (
+                tree["commit"],
+                "; drivers last changed in %s" % tree["drivers_commit"][:12] if tree["drivers_commit"] else "",
+                " (with uncommitted driver changes)" if tree["dirty"] else ""))
         print("Drivers: %d files (%d distinct), %d analysed, %d without resolvable modes, %d not parsed"
               % (summary["drivers"], summary["unique_files"], summary["analysed"],
                  summary["no_modes"], summary["errors"]))
