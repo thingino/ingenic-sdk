@@ -613,6 +613,24 @@ static int soc_nna_mmap(struct file *file, struct vm_area_struct *vma)
 #ifdef CONFIG_SOC_A1
 	uint32_t oram_base = 0;
 #endif
+#ifndef CONFIG_SOC_A1
+	/* T40, and a T41 whose L2 cache has 128 KiB of the on-chip SRAM */
+	unsigned long oram_start = 0x12620000;
+#endif
+#ifdef CONFIG_SOC_T41
+	unsigned int t41_l2cache_size = 128;
+#endif
+
+#ifdef CONFIG_SOC_T41
+	/*
+	 * The T41 has 512 KiB of SRAM: the L2 cache takes the share MSCR
+	 * names and the ORAM is what follows it. The boot ROM leaves 256 KiB
+	 * to the L2 cache, Ingenic's SPL sets 128 KiB.
+	 */
+	if (((*(volatile unsigned int *)0xb2200060 & 0x1c00) >> 10) == 2)
+		t41_l2cache_size = 256;
+	oram_start = 0x12600000 + t41_l2cache_size * 1024;
+#endif
 
 #ifndef CONFIG_SOC_A1
 	/* 设置 pfn的属性 */
@@ -620,13 +638,13 @@ static int soc_nna_mmap(struct file *file, struct vm_area_struct *vma)
 	get_nmem_info(&nmem_addr, &nmem_size);
 
 	/* 根据地址区分地址的类型 */
-	if(paddr_start == 0x12620000){
+	if (paddr_start == oram_start) {
 		mmap_type = 1;//oram
 		extend = 0;
 	}else if(paddr_start == 0x12500000){
 		mmap_type = 2; //descram
 		extend = 0;
-	}else if((paddr_start < 0x12620000 ) && (paddr_end > 0x12620000)) {
+	} else if ((paddr_start < oram_start) && (paddr_end > oram_start)) {
 		mmap_type = 1; //oram
 		extend = 1;
 	} else {
@@ -715,11 +733,11 @@ static int soc_nna_mmap(struct file *file, struct vm_area_struct *vma)
 #ifdef CONFIG_SOC_A1
 		unsigned int real_paddr = (0x12600000 + l2cache_size * 1024);
 #else
-		unsigned int real_paddr = 0x12620000;
+		unsigned int real_paddr = oram_start;
 #endif
 
 #ifdef CONFIG_SOC_T41
-		unsigned int real_size = 384 * 1024;//目前T41的oram_size 为 384 *1024
+		unsigned int real_size = (512 - t41_l2cache_size) * 1024;
 #else
 		unsigned int real_size = oram_real_size * 1024;//896 * 1024
 #endif
@@ -735,6 +753,20 @@ static int soc_nna_mmap(struct file *file, struct vm_area_struct *vma)
 				real_size = buf.nmem_size;
 				real_paddr = buf.nmem_paddr;
 			}
+		}
+		/*
+		 * The extended mapping repeats the region before and after
+		 * itself. That needs a region with a size and a request that
+		 * covers all of it: [real_paddr, real_paddr + real_size). Else
+		 * before_s or after_s wraps and the loops map far past the vma.
+		 */
+		if (real_size == 0 || paddr_start > real_paddr ||
+		    (u64)paddr_end < (u64)real_paddr + real_size) {
+			dev_err(mdev->this_device,
+				"%s [%d:%d]: cannot map 0x%08lx-0x%08lx: not the ORAM or nmem as this driver knows them (region 0x%08x+0x%08x, MSCR 0x%08x)\n",
+				__func__, current->tgid, current->pid, paddr_start, paddr_end,
+				real_paddr, real_size, *(volatile unsigned int *)0xb2200060);
+			return -EINVAL;
 		}
 			/*根据上层传过来扩充映射内存的大小和ORAM size，来做处理，每次映射的区域不能超过实际的物理大小，不改变物理地址，根据虚拟地址偏移多次映射来达到扩充虚拟地址的目的 */
 			before_s = real_paddr - paddr_start;
