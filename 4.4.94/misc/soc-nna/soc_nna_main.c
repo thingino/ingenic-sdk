@@ -736,6 +736,20 @@ static int soc_nna_mmap(struct file *file, struct vm_area_struct *vma)
 				real_paddr = buf.nmem_paddr;
 			}
 		}
+		/*
+		 * The extended mapping repeats the region before and after
+		 * itself. That needs a region with a size and a request that
+		 * covers all of it: [real_paddr, real_paddr + real_size). Else
+		 * before_s or after_s wraps and the loops map far past the vma.
+		 */
+		if (real_size == 0 || paddr_start > real_paddr ||
+		    (u64)paddr_end < (u64)real_paddr + real_size) {
+			dev_err(mdev->this_device,
+				"%s [%d:%d]: cannot map 0x%08lx-0x%08lx: not the ORAM or nmem as this driver knows them (region 0x%08x+0x%08x, MSCR 0x%08x)\n",
+				__func__, current->tgid, current->pid, paddr_start, paddr_end,
+				real_paddr, real_size, *(volatile unsigned int *)0xb2200060);
+			return -EINVAL;
+		}
 			/*根据上层传过来扩充映射内存的大小和ORAM size，来做处理，每次映射的区域不能超过实际的物理大小，不改变物理地址，根据虚拟地址偏移多次映射来达到扩充虚拟地址的目的 */
 			before_s = real_paddr - paddr_start;
 			set_oram_nums = before_s / real_size;
