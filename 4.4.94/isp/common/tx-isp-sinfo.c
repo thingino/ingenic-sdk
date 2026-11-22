@@ -73,7 +73,7 @@ typedef struct tx_isp_subdev sinfo_subdev_t;
  * unsigned ints. The packed num<<16|den encoding is unchanged, so only the
  * member path differs.
  */
-#if defined(CONFIG_SOC_PRJ007)
+#if defined(CONFIG_SOC_PRJ007) || defined(CONFIG_SOC_PRJ008)
 #define SINFO_HAVE_REGINFO_WIRING 1
 #define SINFO_HAVE_VIDEO_MINMAX_FPS 1
 #define SINFO_VIDEO_FPS(v)     ((v).fps.value)

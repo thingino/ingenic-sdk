@@ -3,6 +3,8 @@ OUT := $(MODULE_NAME)
 
 DIR=$(KERNEL_VERSION)/$(MODULE_NAME)/$(SOC_FAMILY)
 
+ccflags-y += -I$(src)/$(DIR)/oss3/include
+
 SRCS := \
   $(DIR)/oss3/audio_dsp.c \
   $(DIR)/oss3/audio_debug.c \
