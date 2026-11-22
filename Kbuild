@@ -1,7 +1,7 @@
 # Ingenic SDK out-of-tree module build.
 #
 # Required inputs (make variables):
-#   SOC_FAMILY      t10 t20 t21 t23 t30 t31 c100 t40 t41 a1
+#   SOC_FAMILY      t10 t20 t21 t23 t30 t31 t32 t33 c100 t40 t41 a1
 #   KERNEL_VERSION  3.10.14 | 4.4.94
 #
 # Everything else is a component switch named CONFIG_INGENIC_*. Each one
@@ -32,7 +32,7 @@ kver := $(KERNEL_VERSION)
 # ---- SoC / kernel predicates -------------------------------------------
 is_a1     := $(if $(filter a1,$(soc)),y)
 # 3.10 SoCs whose vendor SDK ships the oss3 audio tree rather than oss2.
-is_oss3   := $(if $(filter t23 t32,$(soc)),y)
+is_oss3   := $(if $(filter t23 t32 t33,$(soc)),y)
 is_k310   := $(if $(filter 3.10.14,$(kver)),y)
 has_avpu  := $(if $(filter t31 c100 t40 t41,$(soc)),y)
 avpu_impl := $(if $(filter t31 c100,$(soc)),t31,t40)

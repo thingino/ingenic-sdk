@@ -1,0 +1,17 @@
+MODULE_NAME := audio
+OUT := $(MODULE_NAME)
+
+DIR=$(KERNEL_VERSION)/$(MODULE_NAME)/$(SOC_FAMILY)
+
+SRCS := \
+  $(DIR)/oss3/audio_dsp.c \
+  $(DIR)/oss3/audio_debug.c \
+  $(DIR)/oss3/host/PRJ008/audio_aic.c \
+  $(DIR)/oss3/inner_codecs/PRJ008/codec.c \
+  $(DIR)/oss3/boards/PRJ008_platform.c
+
+OBJS := $(SRCS:%.c=%.o) $(ASM_SRCS:%.S=%.o)
+
+$(OUT)-objs := $(OBJS)
+
+obj-m += $(OUT).o
