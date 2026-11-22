@@ -6,6 +6,7 @@ DIR=$(KERNEL_VERSION)/misc/mpsys-driver
 # T33 (PRJ008) has its own mpsys sources and firmware blob
 ifeq ($(SOC_FAMILY),t33)
 DIR := $(DIR)/t33
+ccflags-y += -I$(src)/$(DIR)/include
 endif
 
 SRCS := $(DIR)/mpsys_module.c \
