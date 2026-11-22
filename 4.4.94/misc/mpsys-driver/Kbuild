@@ -3,6 +3,11 @@ OUT := $(MODULE_NAME)
 
 DIR=$(KERNEL_VERSION)/misc/mpsys-driver
 
+# T33 (PRJ008) has its own mpsys sources and firmware blob
+ifeq ($(SOC_FAMILY),t33)
+DIR := $(DIR)/t33
+endif
+
 SRCS := $(DIR)/mpsys_module.c \
 	$(DIR)/private-funcs.c
 
@@ -18,7 +23,11 @@ else ifeq ($(SOC_FAMILY),t40)
 endif
 
 OBJS := $(SRCS:%.c=%.o) $(ASM_SRCS:%.S=%.o)
+ifeq ($(SOC_FAMILY),t33)
+OBJS += $(DIR)/PRJ008-mpsys-firmware-4-4-94.a
+else
 OBJS += $(DIR)/$(SOC_FAMILY)-libmpsys-firmware-$(KVERSION).a
+endif
 
 $(OUT)-objs := $(OBJS)
 

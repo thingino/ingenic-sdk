@@ -37,7 +37,8 @@ is_k310   := $(if $(filter 3.10.14,$(kver)),y)
 has_avpu  := $(if $(filter t31 c100 t40 t41,$(soc)),y)
 avpu_impl := $(if $(filter t31 c100,$(soc)),t31,t40)
 has_nna   := $(if $(filter t40 t41 a1,$(soc)),y)
-has_mpsys := $(if $(filter t40 t41,$(soc)),y)
+has_mpsys := $(if $(filter t33 t40 t41,$(soc)),y)
+has_dtrng := $(if $(filter t40 t41,$(soc)),y)
 
 # ---- component switches (override on the make line) ---------------------
 CONFIG_INGENIC_ISP            ?= $(if $(is_a1),n,y)
@@ -46,7 +47,7 @@ CONFIG_INGENIC_AUDIO          ?= y
 CONFIG_INGENIC_AVPU           ?= $(if $(has_avpu),y,n)
 CONFIG_INGENIC_SOC_NNA        ?= $(if $(has_nna),y,n)
 CONFIG_INGENIC_MPSYS          ?= $(if $(has_mpsys),y,n)
-CONFIG_INGENIC_JZ_DTRNG       ?= $(if $(has_mpsys),y,n)
+CONFIG_INGENIC_JZ_DTRNG       ?= $(if $(has_dtrng),y,n)
 CONFIG_INGENIC_GPIO_USERKEYS  ?= $(if $(is_a1),n,$(if $(is_k310),y,n))
 CONFIG_INGENIC_JZ_AES         ?= $(if $(is_a1),n,$(if $(is_k310),y,n))
 # TCU allocator: central TCU-channel ownership registry. Both motor.ko and
