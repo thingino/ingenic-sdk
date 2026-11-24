@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: GPL-2.0
+# audio.ko: T23 AIC and inner codec (oss3 driver, SDK 1.3.0)
+ccflags-y += -I$(src)/include
+
+audio-objs := \
+	audio_dsp.o \
+	audio_debug.o \
+	host/audio_aic.o \
+	inner_codecs/codec.o
+
+obj-m += audio.o

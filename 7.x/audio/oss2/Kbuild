@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-2.0
+# audio.ko: one oss2 source tree for the T10, T20, T21 and T30. SOC_FAMILY
+# picks the SoC macros the vendor code switches on, the codec file and the DT
+# compatibles.
+codec := $(if $(filter t10,$(SOC_FAMILY)),t20,$(SOC_FAMILY))
+ifeq ($(filter $(SOC_FAMILY),t10 t20 t21 t30),)
+$(error ingenic-sdk 7.x: oss2 audio is for t10, t20, t21 and t30, not $(SOC_FAMILY))
+endif
+
+SOCU := $(shell echo $(SOC_FAMILY) | tr a-z A-Z)
+
+ccflags-y += -I$(src)/compat -I$(src)/core -I$(src)/core/devices \
+	-I$(src)/codecs/$(codec) -I$(src)/codecs \
+	-DCONFIG_SOC_$(SOCU) -DCONFIG_JZ_INTERNAL_CODEC_V12 \
+	-DJZ_AIC_COMPATIBLE='"ingenic,$(SOC_FAMILY)-aic"' \
+	-DJZ_CODEC_COMPATIBLE='"ingenic,$(SOC_FAMILY)-codec"'
+
+audio-objs := \
+	core/audio_debug.o \
+	core/xb_snd_card.o \
+	core/interface/xb_snd_dsp.o \
+	core/devices/xb47xx_i2s_v12.o \
+	codecs/$(codec)/jz_t10_codec.o
+
+obj-m += audio.o

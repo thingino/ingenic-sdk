@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: GPL-2.0
+# audio.ko: T31 AIC, DMIC and inner codec (oss3 driver, libimp 1.1.x ioctl set)
+ccflags-y += -I$(src)/include
+
+audio-objs := \
+	audio_dsp.o \
+	audio_debug.o \
+	host/audio_aic.o \
+	host/audio_dmic.o \
+	inner_codecs/codec.o
+
+obj-m += audio.o
