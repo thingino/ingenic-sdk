@@ -2,7 +2,7 @@
 #
 # Required inputs (make variables):
 #   SOC_FAMILY      t10 t20 t21 t23 t30 t31 t32 t33 c100 t40 t41 a1
-#   KERNEL_VERSION  3.10.14 | 4.4.94
+#   KERNEL_VERSION  3.10.14 | 4.4.94 | 7.x
 #
 # Everything else is a component switch named CONFIG_INGENIC_*. Each one
 # has a per-SoC default below and can be overridden on the make command
@@ -25,6 +25,12 @@ endif
 ifeq ($(KERNEL_VERSION),)
     $(error KERNEL_VERSION missing)
 endif
+
+# Mainline Linux 7.x (t10 t20 t21 t23 t30 t31) has its own tree and component
+# switches in 7.x/Kbuild; nothing below applies to it.
+ifeq ($(KERNEL_VERSION),7.x)
+include $(src)/7.x/Kbuild
+else
 
 soc  := $(SOC_FAMILY)
 kver := $(KERNEL_VERSION)
@@ -156,3 +162,5 @@ ifeq ($(CONFIG_INGENIC_A1_MEDIA),y)
     include $(src)/$(kver)/video/a1/vdec/Kbuild
     include $(src)/$(kver)/audio/$(soc)/hdmi_audio/Kbuild
 endif
+
+endif # KERNEL_VERSION != 7.x

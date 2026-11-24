@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-2.0
+# Out-of-tree modules for mainline Linux 7.x on the T10, T20, T21, T23, T30
+# and T31 (see README.md). Included from the top-level Kbuild when
+# KERNEL_VERSION=7.x.
+#
+# Each component is a directory with its own Kbuild, descended into from this
+# one M= pass, so modpost resolves the sensors against tx-isp and every
+# component keeps its own include paths and flags.
+#
+# Component switches, overridable on the make command line:
+#   CONFIG_INGENIC_ISP     tx-isp-<soc>.ko
+#   CONFIG_INGENIC_SENSOR  sensor_<name>_<soc>.ko: SENSOR_MODEL (and
+#                          SENSOR_1_MODEL / SENSOR_2_MODEL), else every
+#                          sensor in sensor-src/<soc>
+#   CONFIG_INGENIC_VPU     soc-vpu-<soc>.ko (helix/radix, not on t31)
+#   CONFIG_INGENIC_AVPU    avpu.ko (t31 only)
+#   CONFIG_INGENIC_IPU     ipu-<soc>.ko (ipu.ko on t31), libimp OSD
+#   CONFIG_INGENIC_AUDIO   audio.ko, oss2 or oss3 (CONFIG_INGENIC_AUDIO_VARIANT)
+#   CONFIG_INGENIC_RMEM    rmem.ko, /dev/rmem for libimp
+#   CONFIG_INGENIC_LOGGER  android_logger.ko, /dev/log_* for libimp
+
+soc := $(SOC_FAMILY)
+ifeq ($(filter t10 t20 t21 t23 t30 t31,$(soc)),)
+    $(error ingenic-sdk 7.x: SOC_FAMILY=$(soc) is not supported (t10 t20 t21 t23 t30 t31))
+endif
+
+# The T10 runs the T20 ISP, VPU and sensor sources, built under its own names.
+src_soc := $(if $(filter t10,$(soc)),t20,$(soc))
+is_t31  := $(if $(filter t31,$(soc)),y)
+
+CONFIG_INGENIC_ISP           ?= y
+CONFIG_INGENIC_SENSOR        ?= y
+CONFIG_INGENIC_VPU           ?= $(if $(is_t31),n,y)
+CONFIG_INGENIC_AVPU          ?= $(if $(is_t31),y,n)
+CONFIG_INGENIC_IPU           ?= y
+CONFIG_INGENIC_AUDIO         ?= y
+CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31,$(soc)),oss3,oss2)
+CONFIG_INGENIC_RMEM          ?= y
+CONFIG_INGENIC_LOGGER        ?= y
+
+$(info ingenic-sdk: soc=$(soc) kernel=7.x)
+
+ifeq ($(CONFIG_INGENIC_ISP),y)
+    obj-m += 7.x/isp/$(src_soc)/
+endif
+
+ifeq ($(CONFIG_INGENIC_SENSOR),y)
+    obj-m += 7.x/sensor-src/$(src_soc)/
+endif
+
+ifeq ($(CONFIG_INGENIC_VPU),y)
+    obj-m += 7.x/vpu/$(src_soc)/
+endif
+
+ifeq ($(CONFIG_INGENIC_AVPU),y)
+    obj-m += 7.x/avpu/$(src_soc)/
+endif
+
+ifeq ($(CONFIG_INGENIC_IPU),y)
+    obj-m += 7.x/ipu/
+endif
+
+ifeq ($(CONFIG_INGENIC_AUDIO),y)
+    ifeq ($(CONFIG_INGENIC_AUDIO_VARIANT),oss2)
+        obj-m += 7.x/audio/oss2/
+    else
+        obj-m += 7.x/audio/oss3/$(soc)/
+    endif
+endif
+
+ifeq ($(CONFIG_INGENIC_RMEM),y)
+    obj-m += 7.x/rmem/
+endif
+
+ifeq ($(CONFIG_INGENIC_LOGGER),y)
+    obj-m += 7.x/logger/
+endif
