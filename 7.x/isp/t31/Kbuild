@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: GPL-2.0
+# tx-isp-t31.ko: the 3.10-built T31 ISP firmware (libt31-firmware-540.a, 1.1.6)
+# plus the adapter that lets it run on Linux 7.x.
+
+ccflags-y += -I$(src)/include -I$(src)
+ccflags-y += -Wno-unused-function
+
+tx-isp-t31-objs := tx-isp-module.o tx-isp-debug.o tx-isp-abi.o txx-funcs.o \
+		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-fwc.o tx-isp-fwc-txioctl.o tx-isp-fwc-fch.o tx-isp-fwc-tun.o tx-isp-fwc-vfs.o tx-isp-fw.o
+
+obj-m += tx-isp-t31.o
+
+T31_FW := sdk/libt31-firmware-540.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x are
+# redirected to the translators in txx-funcs.c; __copy_user is the same
+# routine as 7.x's __raw_copy_to_user (one body, two entry points).
+T31_REDEF := \
+	--redefine-sym arch_local_irq_save=t31_irq_save_310 \
+	--redefine-sym arch_local_irq_restore=t31_irq_restore_310 \
+	--redefine-sym __class_create=t31_class_create_310 \
+	--redefine-sym dev_get_drvdata=t31_dev_get_drvdata_310 \
+	--redefine-sym kfree_skb=t31_kfree_skb_310 \
+	--redefine-sym kmalloc_caches=t31_kmalloc_caches \
+	--redefine-sym kmem_cache_alloc=t31_kmem_cache_alloc_310 \
+	--redefine-sym __might_sleep=t31_might_sleep_310 \
+	--redefine-sym PDE_DATA=t31_pde_data_310 \
+	--redefine-sym preempt_schedule=t31_preempt_schedule_310 \
+	--redefine-sym seq_printf=t31_seq_printf_310 \
+	--redefine-sym schedule_timeout=t31_schedule_timeout_310 \
+	--redefine-sym cdev_init=t31_cdev_init_310 \
+	--redefine-sym cdev_del=t31_cdev_del_310 \
+	--redefine-sym class_destroy=t31_class_destroy_310 \
+	--redefine-sym device_destroy=t31_device_destroy_310 \
+	--redefine-sym __copy_user=__raw_copy_to_user \
+	--globalize-symbol=tevent_info
+
+# tx-isp-fwc.c takes over the firmware functions that read kernel objects by
+# 3.10 offset. Static ones are renamed t31fw_* and made global so the slot
+# checks can name them; global ones are weakened; the firmware helpers and
+# data the C versions use are made global.
+T31_FWC_STATIC := tx_isp_open tx_isp_release frame_channel_open \
+	frame_channel_release isp_core_tunning_open isp_core_tunning_release \
+	isp_core_tunning_unlocked_ioctl tx_isp_unlocked_ioctl \
+	frame_channel_unlocked_ioctl ispcore_pad_event_handle tisp_code_tuning_ioctl \
+	isp_vic_cmd_set video_input_cmd_set
+T31_FWC_WEAK := isp_frame_done_wait tisp_netlink_exit isp_tunning_read \
+	tiziano_load_parameters
+T31_FWC_SHARED := tx_isp_fops fs_channel_ops isp_core_tunning_fops \
+	apical_isp_core_ops_g_ctrl apical_isp_core_ops_s_ctrl \
+	__frame_channel_vb2_streamoff __vb2_queue_free \
+	tx_isp_video_link_destroy.isra.5 nlsk \
+	configs ae_info_mine ae_statis_mine wdr_switch tx_isp_video_s_stream \
+	tx_isp_video_link_stream find_subdev_link_pad subdev_video_destroy_link \
+	tx_isp_get_ae_algo_handle.isra.16 \
+	__enqueue_in_driver __vb2_queue_cancel __fill_v4l2_buffer \
+	frame_channel_vidioc_get_fmt frame_channel_vidioc_set_fmt check_state \
+	ch0_pre_dequeue_vb ispcore_frame_channel_streamoff isp_output_fmt \
+	tisp_par_ioctl apical_isp_awb_zone_statis_g_attr.isra.94 \
+	apical_isp_ae_g_roi.isra.77 apical_isp_expr_g_ctrl.isra.72 \
+	apical_isp_ev_g_attr.isra.75 apical_isp_ae_zone_weight_g_attr.isra.89 \
+	apical_isp_ae_zone_g_ctrl.isra.84 apical_isp_ae_hist_origin_g_attr.isra.92 \
+	apical_isp_max_dgain_g_ctrl.isra.74 apical_isp_max_again_g_ctrl.isra.73 \
+	apical_isp_gamma_g_attr.isra.76 apical_isp_af_hist_g_attr.isra.95 \
+	tiziano_isp_ae_manual_attr_g_ctrl.isra.103 apical_isp_af_weight_g_attr.isra.96 \
+	apical_isp_af_zone_g_ctrl.isra.85 apical_isp_mask_g_attr.isra.68 \
+	tiziano_isp_csc_g_attr.isra.108 \
+	isp_vic_frd_fops video_input_cmd_fops vic_cmd_buf video_input_cmd_buf crc_table
+T31_REDEF += $(foreach f,$(T31_FWC_STATIC),--redefine-sym $(f)=t31fw_$(f) --globalize-symbol=t31fw_$(f)) \
+	     $(foreach f,$(T31_FWC_WEAK),--weaken-symbol=$(f)) \
+	     $(foreach f,$(T31_FWC_SHARED),--globalize-symbol=$(f))
+
+# 3.10's 8-byte __ksymtab entries and their strings: tx-isp-exports.c
+# exports the same 25 symbols in the native format.
+T31_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings
+
+# The firmware's remove callbacks sit in .exit.text but are referenced from
+# its .data, which modpost rejects; as plain text they are never discarded.
+T31_REDEF += --rename-section .exit.text=.text.t31_exit \
+	     --rename-section .rel.exit.text=.rel.text.t31_exit
+
+quiet_cmd_t31fw = FWFIX   $@
+      cmd_t31fw = $(OBJCOPY) $(T31_REDEF) $(T31_STRIP) $< $@
+
+$(obj)/tx-isp-fw.o: $(src)/$(T31_FW) FORCE
+	$(call if_changed,t31fw)
+
+targets += tx-isp-fw.o
