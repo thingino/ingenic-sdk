@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# T32 sensors: the vendor drivers, built for 7.x against the adapter in isp/t32
+SENSORS := sc4336p
+ccflags-y += -I$(src)/../../isp/t32/include -I$(src)/../../isp/t32
+ccflags-y += -DCONFIG_KERNEL_5_15 -DCONFIG_SOC_PRJ007
+ccflags-y += -Wno-unused-function -Wno-missing-prototypes -Wno-missing-declarations
+include $(src)/../sensors.mk
