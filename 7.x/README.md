@@ -35,7 +35,8 @@ without it every sensor in `7.x/sensor-src/<soc>` is built.
 | T23 | closed firmware 1.3.0 (4.4.94 build) + ABI adapter | `soc-vpu-t23.ko` (helix) | `ipu-t23.ko` | oss3 | sc2336 |
 | T30 | vendor source + Apical blob | `soc-vpu-t30.ko` (helix H.264/JPEG, radix H.265) | `ipu-t30.ko` | oss2 | jxf23, sc2235, sc4236 |
 | T31 | closed firmware 1.1.6 (3.10 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | `ipu.ko` | oss3 | gc4653 |
-| T32 | closed firmware isp_20260618a (5.15 build) + ABI adapter | `soc-vpu-t32.ko` (helix H.264/JPEG, radix H.265) | `ipu-t32.ko` (IPU v13) | | sc4336p |
+| T32 | closed firmware isp_20260618a (5.15 build) + ABI adapter | `soc-vpu-t32.ko` (helix H.264/JPEG, radix H.265) | `ipu-t32.ko` (IPU v13) | oss3 (AIC, inner codec; no DMIC) | sc4336p |
+| T33 | | | | oss3 (AIC, inner codec) | |
 
 Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`
 region, and `ispmem=` on the T10/T20) and `android_logger.ko` (`/dev/log_*`).
@@ -48,8 +49,9 @@ the symbols the sensor drivers use. The objcopy steps are in each `Kbuild`.
 
 Layout: `isp/<soc>`, `vpu/<soc>`, `avpu/t31`, `sensor-src/<soc>` per SoC;
 `ipu`, `rmem`, `logger` shared by all; `audio/oss2` shared by the T10, T20,
-T21 and T30; `audio/oss3/t23` and `audio/oss3/t31` (different vendor driver
-releases with different ioctl sets).
+T21 and T30; `audio/oss3/t23`, `audio/oss3/t31` and `audio/oss3/t32` (different vendor driver
+releases with different ioctl sets); `audio/oss3/t33` uses the T32's dsp core
+with its own AIC and codec.
 
 ## Verified on hardware
 
