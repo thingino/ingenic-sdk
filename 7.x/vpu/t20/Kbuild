@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# soc-vpu-<soc>.ko for the T10 and T20: the /dev/soc_vpu channel scheduler and
+# the helix VPU client, vendor SDK 3.12.0 kernel/drivers/video/soc_vpu
+SOCU := $(shell echo $(SOC_FAMILY) | tr a-z A-Z)
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_$(SOCU) -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=1 -Wno-error
+
+soc-vpu-$(SOC_FAMILY)-objs := soc_vpu.o jz_nvpu.o
+obj-m += soc-vpu-$(SOC_FAMILY).o

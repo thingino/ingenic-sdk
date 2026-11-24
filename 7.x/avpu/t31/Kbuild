@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# avpu.ko: the T31 EL150 (H.264/H.265/JPEG) encoder; no dma-buf export
+ccflags-y += -I$(src)/../../rmem
+ccflags-y += -DAVPU_NO_DMABUF=1
+
+avpu-objs := avpu_main.o avpu_ip.o avpu_alloc.o avpu_alloc_ioctl.o avpu_no_dmabuf.o
+obj-m += avpu.o

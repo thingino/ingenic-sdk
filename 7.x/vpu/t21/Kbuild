@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# soc-vpu-t21.ko: the /dev/soc_vpu channel scheduler and the T21 helix VPU client,
+# vendor SDK T21-1.0.33 kernel/drivers/video/soc_vpu
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=1 -Wno-error
+
+soc-vpu-t21-objs := soc_vpu.o helix.o
+obj-m += soc-vpu-t21.o
