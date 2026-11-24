@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0
+# T30 sensors, built against isp/t30
+SENSORS := jxf23 sc2235 sc4236
+ccflags-y += -I$(src)/../../isp/t30/include -I$(src)/../../isp/t30/compat -I$(src)/../../isp/t30 -DCONFIG_SOC_T30 -include $(src)/../../isp/t30/compat/t30_compat.h -Wno-error
+include $(src)/../sensors.mk

@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# T23 sensors: the vendor drivers, built for 7.x against the adapter in isp/t23
+SENSORS := sc2336
+ccflags-y += -I$(src)/../../isp/t23/include -I$(src)/../../isp/t23
+ccflags-y += -Wno-unused-function -Wno-missing-prototypes -Wno-missing-declarations
+include $(src)/../sensors.mk
