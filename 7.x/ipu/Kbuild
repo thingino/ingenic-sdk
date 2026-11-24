@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# IPU (libimp OSD, /dev/ipu), one driver for all 7.x SoCs. The T31 module
+# keeps its original name ipu.ko; the others are ipu-<soc>.ko.
+ccflags-y += -I$(src)/../rmem
+
+ipu_mod := $(if $(filter t31,$(SOC_FAMILY)),ipu,ipu-$(SOC_FAMILY))
+$(ipu_mod)-objs := ipu_main.o
+obj-m += $(ipu_mod).o
