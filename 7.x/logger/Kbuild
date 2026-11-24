@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+ccflags-y += -I$(src)
+ccflags-y += -Wno-error -Wno-unused-function
+
+# Module name differs from the single source filename to avoid a
+# circular logger.o <- logger.o dependency in kbuild.
+android_logger-objs := logger.o
+obj-m += android_logger.o

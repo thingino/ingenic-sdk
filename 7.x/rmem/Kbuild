@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: GPL-2.0
+# rmem.ko: /dev/rmem, libimp's view of the rmem= (and ispmem=) carve-outs
+obj-m += rmem.o
