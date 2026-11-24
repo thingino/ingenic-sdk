@@ -1,0 +1,120 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * t20enc: libimp H.264 encode of the frame source's channel 0 through the
+ * T20 VPU (/dev/soc_vpu). Writes the stream to a file and prints the size and
+ * type of each access unit.
+ *
+ *   t20enc [frames] [out.h264]
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+#include <imp/imp_log.h>
+#include <imp/imp_common.h>
+#include <imp/imp_system.h>
+#include <imp/imp_framesource.h>
+#include <imp/imp_encoder.h>
+#include <imp/imp_isp.h>
+
+/* IMP_SENSOR, IMP_ADDR, IMP_W and IMP_H pick another sensor (the T10's is a 1280x720 jxh42) */
+static const char *envs(const char *n, const char *d) { const char *v = getenv(n); return v ? v : d; }
+static int envi(const char *n, int d) { const char *v = getenv(n); return v ? (int)strtol(v, NULL, 0) : d; }
+#define SENSOR_NAME	envs("IMP_SENSOR", "jxf23")
+#define SENSOR_ADDR	envi("IMP_ADDR", 0x40)
+#define W		envi("IMP_W", 1920)
+#define H		envi("IMP_H", 1080)
+
+extern int IMP_Encoder_SetPoolSize(int size);
+
+#define STEP(x) do { int r_ = (x); if (r_ < 0) { printf("%s failed %d\n", #x, r_); return 1; } } while (0)
+
+int main(int argc, char **argv)
+{
+	int frames = argc > 1 ? atoi(argv[1]) : 10;
+	const char *out = argc > 2 ? argv[2] : "/tmp/out.h264";
+	IMPSensorInfo si;
+	IMPFSChnAttr fa;
+	IMPEncoderCHNAttr ea;
+	IMPCell fs = { DEV_ID_FS, 0, 0 };
+	IMPCell enc = { DEV_ID_ENC, 0, 0 };
+	int fd, i, got = 0;
+
+	memset(&si, 0, sizeof(si));
+	strcpy(si.name, SENSOR_NAME);
+	si.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
+	strcpy(si.i2c.type, SENSOR_NAME);
+	si.i2c.addr = SENSOR_ADDR;
+
+	IMP_Encoder_SetPoolSize(1 * 1024 * 1024);
+	STEP(IMP_ISP_Open());
+	STEP(IMP_ISP_AddSensor(&si));
+	STEP(IMP_ISP_EnableSensor());
+	STEP(IMP_System_Init());
+	STEP(IMP_ISP_EnableTuning());
+	STEP(IMP_ISP_Tuning_SetSensorFPS(25, 1));
+	puts("isp up");
+
+	memset(&fa, 0, sizeof(fa));
+	fa.pixFmt = PIX_FMT_NV12;
+	fa.outFrmRateNum = 25;
+	fa.outFrmRateDen = 1;
+	fa.nrVBs = 3;
+	fa.type = FS_PHY_CHANNEL;
+	fa.picWidth = W;
+	fa.picHeight = H;
+	STEP(IMP_FrameSource_CreateChn(0, &fa));
+	STEP(IMP_FrameSource_SetChnAttr(0, &fa));
+
+	STEP(IMP_Encoder_CreateGroup(0));
+	memset(&ea, 0, sizeof(ea));
+	ea.encAttr.enType = PT_H264;
+	ea.encAttr.bufSize = 0;
+	ea.encAttr.profile = 1;
+	ea.encAttr.picWidth = W;
+	ea.encAttr.picHeight = H;
+	ea.rcAttr.outFrmRate.frmRateNum = 25;
+	ea.rcAttr.outFrmRate.frmRateDen = 1;
+	ea.rcAttr.maxGop = 50;
+	ea.rcAttr.attrRcMode.rcMode = ENC_RC_MODE_FIXQP;
+	ea.rcAttr.attrRcMode.attrH264FixQp.qp = 38;
+	ea.rcAttr.attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
+	ea.rcAttr.attrHSkip.maxHSkipType = IMP_Encoder_STYPE_N1X;
+	STEP(IMP_Encoder_CreateChn(0, &ea));
+	STEP(IMP_Encoder_RegisterChn(0, 0));
+	STEP(IMP_System_Bind(&fs, &enc));
+	STEP(IMP_FrameSource_EnableChn(0));
+	puts("encoder bound");
+	STEP(IMP_Encoder_StartRecvPic(0));
+
+	fd = open(out, O_RDWR | O_CREAT | O_TRUNC, 0644);
+	if (fd < 0) { puts("open out failed"); return 1; }
+	for (i = 0; i < frames; i++) {
+		IMPEncoderStream st;
+		int j;
+		size_t total = 0;
+
+		if (IMP_Encoder_PollingStream(0, 5000) < 0) {
+			printf("poll %d timeout\n", i);
+			continue;
+		}
+		if (IMP_Encoder_GetStream(0, &st, 1) < 0) {
+			printf("GetStream %d failed\n", i);
+			break;
+		}
+		for (j = 0; j < (int)st.packCount; j++) {
+			write(fd, (void *)st.pack[j].virAddr, st.pack[j].length);
+			total += st.pack[j].length;
+		}
+		printf("au %d: %d packs %zu bytes\n", i, (int)st.packCount, total);
+		got++;
+		IMP_Encoder_ReleaseStream(0, &st);
+	}
+	close(fd);
+	IMP_Encoder_StopRecvPic(0);
+	printf("t20enc done: %d/%d\n", got, frames);
+	return got == frames ? 0 : 2;
+}
