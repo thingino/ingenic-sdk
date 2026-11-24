@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: GPL-2.0
+# tx-isp-t32.ko: the 5.15-built T32 ISP firmware (libPRJ007-firmware-515-540.a,
+# isp_20260618a) plus the adapter that lets it run on Linux 7.x.
+
+ccflags-y += -I$(src)/include -I$(src)
+ccflags-y += -DCONFIG_KERNEL_5_15 -DCONFIG_SOC_PRJ007
+ccflags-y += -Wno-unused-function
+
+tx-isp-t32-objs := tx-isp-module.o tx-isp-funcs.o tx-isp-abi.o txx-funcs.o \
+		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fw.o
+
+obj-m += tx-isp-t32.o
+
+T32_FW := sdk/libt32-firmware.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x are
+# redirected to the translators in txx-funcs.c and tx-isp-twin.c. printk is a
+# macro now; __copy_user is the same routine as 7.x's __raw_copy_to_user.
+T32_REDEF := \
+	--redefine-sym __class_create=t32_class_create_44 \
+	--redefine-sym kmalloc_caches=t32_kmalloc_caches \
+	--redefine-sym kmem_cache_alloc=t32_kmem_cache_alloc_44 \
+	--redefine-sym PDE_DATA=t32_pde_data_44 \
+	--redefine-sym seq_printf=t32_seq_printf_44 \
+	--redefine-sym seq_read=t32_seq_read \
+	--redefine-sym seq_lseek=t32_seq_lseek \
+	--redefine-sym single_release=t32_single_release \
+	--redefine-sym single_open=t32_single_open_44 \
+	--redefine-sym proc_create_data=t32_proc_create_data \
+	--redefine-sym schedule_timeout=t32_schedule_timeout_44 \
+	--redefine-sym cdev_init=t32_cdev_init_44 \
+	--redefine-sym cdev_del=t32_cdev_del_44 \
+	--redefine-sym class_destroy=t32_class_destroy_44 \
+	--redefine-sym device_destroy=t32_device_destroy_44 \
+	--redefine-sym clk_get=t32_clk_get_44 \
+	--redefine-sym clk_set_parent=t32_clk_set_parent_44 \
+	--redefine-sym ioremap_prot=t32_ioremap_prot_44 \
+	--redefine-sym queue_work_on=t32_queue_work_on_44 \
+	--redefine-sym rmem_base=t32_rmem_base \
+	--redefine-sym rmem_size=t32_rmem_size \
+	--redefine-sym strncpy=t32_strncpy \
+	--redefine-sym arch_sync_dma_for_device=t32_arch_sync_dma_for_device \
+	--redefine-sym dma_sync_single_for_device=t32_dma_sync_single_for_device
+
+# 5.15's 8-byte __ksymtab entries and their strings: tx-isp-exports.c
+# exports the same six symbols in the native format.
+T32_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings \
+	     -R '__ksymtab*' -R '.rel__ksymtab*'
+
+# The firmware's remove callbacks sit in .exit.text but are referenced from
+# its .data, which modpost rejects; as plain text they are never discarded.
+T32_REDEF += --rename-section .exit.text=.text.t32_exit \
+	     --rename-section .rel.exit.text=.rel.text.t32_exit
+
+quiet_cmd_t32fw = FWFIX   $@
+      cmd_t32fw = $(OBJCOPY) $(T32_REDEF) $(T32_STRIP) $< $@
+
+$(obj)/tx-isp-fw.o: $(src)/$(T32_FW) FORCE
+	$(call if_changed,t32fw)
+
+targets += tx-isp-fw.o
