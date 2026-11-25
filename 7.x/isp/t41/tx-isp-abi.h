@@ -110,9 +110,6 @@ void __iomem *t41___ioremap_44(phys_addr_t phys, unsigned long size, unsigned lo
 void t41___iounmap_44(const volatile void __iomem *addr);
 u32 t41___div64_32(u64 *n, u32 base);
 extern unsigned long t41_mips_io_port_base;
-void t41_mxuv3_begin_partial(unsigned int regs);
-void t41_mxuv3_end(void);
-void tisp_tmo_fpga(void *par);
 void t41_misc_deregister_44(struct miscdevice *misc44);
 int t41_sched_setscheduler_44(struct task_struct *p, int policy, const struct sched_param *param);
 int t41_single_open_44(struct file *twin, int (*show)(struct seq_file *, void *), void *data);

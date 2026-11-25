@@ -38,12 +38,7 @@ T41_REDEF := \
 	--redefine-sym sched_setscheduler=t41_sched_setscheduler_44 \
 	--redefine-sym __copy_user=__raw_copy_to_user \
 	--redefine-sym __div64_32=t41___div64_32 \
-	--redefine-sym mips_io_port_base=t41_mips_io_port_base \
-	--redefine-sym kernel_mxuv3_begin_partial=t41_mxuv3_begin_partial \
-	--redefine-sym kernel_mxuv3_end=t41_mxuv3_end \
-	--weaken-symbol=tisp_tmo_fpga
-
-# The weakened tisp_tmo_fpga loses to the C function of the same name.
+	--redefine-sym mips_io_port_base=t41_mips_io_port_base
 
 # 4.4.94's 8-byte __ksymtab entries and their strings: tx-isp-exports.c
 # exports the same seven symbols in the native format.

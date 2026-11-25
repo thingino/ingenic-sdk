@@ -398,24 +398,6 @@ u32 t41___div64_32(u64 *n, u32 base)
 }
 
 /*
- * tisp_tmo_fpga is the one firmware function written in MXU3, which the
- * kernel does not enable for modules yet. It is replaced by a C function
- * that leaves the tone-mapping curve untouched; the firmware's calls to the
- * kernel's MXU3 begin/end around it do nothing.
- */
-void t41_mxuv3_begin_partial(unsigned int regs)
-{
-}
-
-void t41_mxuv3_end(void)
-{
-}
-
-void tisp_tmo_fpga(void *par)
-{
-}
-
-/*
  * The firmware's inlined port accesses add a physical address to
  * mips_io_port_base, which 4.4's MIPS kept at KSEG1; 7.x leaves it 0.
  */
