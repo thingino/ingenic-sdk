@@ -246,6 +246,9 @@ static void vo_storm_dump(unsigned int irq)
 	pr_cont("\nvo: hdmi ih_mute 7fc: %02x\nvo: vde intp:", readl(h + 0x7fc) & 0xff);
 	for (i = 0; i < 4; i++)
 		pr_cont(" %08x", readl(v + 4 * i));
+	pr_cont("\nvo: vde en/clr/status A, en/clr/status B (20..3c):");
+	for (i = 8; i < 16; i++)
+		pr_cont(" %08x", readl(v + 4 * i));
 	pr_cont("\nvo: gpio B pin/int/msk/pat1/pat0/pu:");
 	{
 		void __iomem *g = (void __iomem *)(0xa0000000 | 0x10011000);
@@ -255,8 +258,45 @@ static void vo_storm_dump(unsigned int irq)
 	}
 }
 
+/*
+ * The display error interrupts (bits 4..12 of the second status word: under
+ * flow, unpack errors) stay asserted while the condition lasts, once per line:
+ * the firmware acknowledges each one and the next arrives at once. They are
+ * enabled when a graphic layer is shown. Past 64 interrupts in a second the
+ * error bits are masked in the interrupt enable word (the frame interrupts in
+ * the first word keep running) and the status that caused it is reported.
+ */
+#define VDE_ERR_BITS	0x1ff0
+
+static void vo_irq_pre(unsigned int irq)
+{
+	static unsigned long win;
+	static unsigned int n;
+	void __iomem *v = (void __iomem *)(0xa0000000 | 0x13360000);
+	struct irq_data *d = irq_get_irq_data(irq);
+	u32 a, b;
+
+	if (!d || irqd_to_hwirq(d) != 20)
+		return;
+	if (time_after(jiffies, win + HZ)) {
+		win = jiffies;
+		n = 0;
+	}
+	if (++n != 64)
+		return;
+	a = readl(v + 0x28);
+	b = readl(v + 0x38);
+	pr_info("vo: vde interrupt rate high: status A %08x B %08x, enable A %08x B %08x\n",
+		a, b, readl(v + 0x20), readl(v + 0x30));
+	if (b & VDE_ERR_BITS) {
+		writel(readl(v + 0x30) & ~VDE_ERR_BITS, v + 0x30);
+		pr_warn("vo: vde error interrupts %#x asserting continuously, masked\n", b & VDE_ERR_BITS);
+	}
+}
+
 static int __init vo_a1_init(void)
 {
+	a1_irq_pre_hook = vo_irq_pre;
 	a1_storm_hook = vo_storm_dump;
 	return ingenic_vde_init();
 }

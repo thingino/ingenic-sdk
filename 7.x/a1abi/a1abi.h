@@ -258,6 +258,8 @@ struct a1_irqw {
 
 static struct a1_irqw a1_irqw[A1_IRQW_MAX];
 static void (*a1_storm_hook)(unsigned int irq);
+/* runs before the firmware's handler, so a driver can read the status it is about to acknowledge */
+static void (*a1_irq_pre_hook)(unsigned int irq);
 
 static void a1_irq_rearm(struct work_struct *work)
 {
@@ -272,7 +274,11 @@ static void a1_irq_rearm(struct work_struct *work)
 static irqreturn_t a1_irq_wrap(int irq, void *p)
 {
 	struct a1_irqw *w = p;
-	irqreturn_t r = w->handler(irq, w->dev);
+	irqreturn_t r;
+
+	if (a1_irq_pre_hook)
+		a1_irq_pre_hook(irq);
+	r = w->handler(irq, w->dev);
 
 	if (time_after(jiffies, w->window + HZ)) {
 		w->window = jiffies;
