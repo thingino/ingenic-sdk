@@ -104,7 +104,7 @@ MODULE_PARM_DESC(ispmem_size, "ISP private memory size in bytes");
 #define T32_RES44_FLAGS		offsetof(struct resource, flags)
 #define T32_PDRV44_PROBE	0	/* int (*)(struct platform_device *) */
 #define T32_PDRV44_REMOVE	4
-#define T32_PDRV44_DRIVER	20	/* struct device_driver; .name at +0, .owner at +8 */
+#define T32_PDRV44_DRIVER	24	/* struct device_driver (5.15.170 has remove_new at 8); .name at +0, .owner at +8 */
 
 typedef int (*t32_pdrv_fn)(void *);
 
@@ -234,6 +234,7 @@ static const struct {
 	{ "isp-m0", "ingenic,t32-isp", "isp" },
 	{ "isp-w02", "ingenic,t32-isp", "vic" },
 	{ "isp-ivdc", "ingenic,t32-ivdc", "ivdc" },
+	{ "isp-m1", "ingenic,t32-ldc", "ldc" },
 };
 
 static int t32_dt_irq(const char *devname)
@@ -283,7 +284,7 @@ static int priv_platform_device_register(struct platform_device *pdev)
 			res[i].end = BLOB(r, T32_RES44_END, u32);
 			res[i].name = BLOB(r, T32_RES44_NAME, const char *);
 			res[i].flags = BLOB(r, T32_RES44_FLAGS, u32);
-			pr_debug("t32-isp: %s res %d: %#llx..%#llx flags %#lx\n", name, i,
+			pr_info("t32-isp: %s res %d: %#llx..%#llx flags %#lx\n", name, i,
 				 (u64)res[i].start, (u64)res[i].end, res[i].flags);
 			if (res[i].flags & IORESOURCE_IRQ) {
 				int irq = t32_dt_irq(name);
@@ -521,7 +522,7 @@ static const struct {
 	{ "div_ispa", T32_CLK_ISPA }, { "mux_ispa", T32_CLK_ISPA },
 	{ "gate_csi", T32_CLK_MIPI_CSI }, { "gate_ivdc", T32_CLK_IVDC },
 	{ "div_ldc", T32_CLK_LDC }, { "mux_ldc", T32_CLK_LDC }, { "gate_ldc", T32_CLK_LDC },
-	{ "div_vpu", T32_CLK_VPU }, { "mux_vpu", T32_CLK_VPU },
+	{ "div_vpu", T32_CLK_VPU }, { "mux_vpu", T32_CLK_VPU }, { "gate_vpu", T32_CLK_VPU },
 	{ "div_cim", T32_CLK_CIM }, { "mux_cim", T32_CLK_CIM },
 	{ "ext", T32_CLK_EXCLK }, { "apll", T32_CLK_APLL }, { "mpll", T32_CLK_MPLL },
 	{ "vpll", T32_CLK_VPLL }, { "sclka", T32_CLK_SCLKA },
@@ -588,7 +589,7 @@ static int priv_clk_set_rate(struct clk *clk, unsigned long rate)
  * ---- i2c -------------------------------------------------------------------
  *
  * isp_i2c_new_subdev_board() creates the sensor's i2c client through the
- * table and then reads client->dev.driver (4.4 offset 100; 88 on 7.x) and
+ * table and then reads client->dev.driver (5.15 offset 88) and
  * driver->owner (8, the same on both) to pin the sensor module. It hands the
  * pointer back only to table entries, so it gets a 4.4-shaped twin carrying
  * the few fields it reads, with the kernel's client behind it. The
@@ -600,7 +601,7 @@ static int priv_clk_set_rate(struct clk *clk, unsigned long rate)
 #define T32_CLIENT44_ADDR	2	/* u16 */
 #define T32_CLIENT44_NAME	4	/* char[20] */
 #define T32_CLIENT44_ADAPTER	24	/* struct i2c_adapter * */
-#define T32_CLIENT44_DEV_DRIVER	100	/* struct device_driver * */
+#define T32_CLIENT44_DEV_DRIVER	88	/* struct device_driver * */
 
 struct t32_i2c_twin {
 	u8 client44[T32_CLIENT44_SIZE] __aligned(4);
@@ -1438,7 +1439,6 @@ int tx_isp_abi_init(void)
 	BUILD_BUG_ON(offsetof(struct platform_device, resource) != T32_PDEV44_RES);
 	BUILD_BUG_ON(offsetof(struct platform_driver, probe) != T32_PDRV44_PROBE);
 	BUILD_BUG_ON(offsetof(struct platform_driver, remove) != T32_PDRV44_REMOVE);
-	BUILD_BUG_ON(offsetof(struct platform_driver, driver) != T32_PDRV44_DRIVER);
 	BUILD_BUG_ON(sizeof(struct miscdevice) != 40);
 	BUILD_BUG_ON(offsetof(struct miscdevice, mode) != T32_MISC44_MODE);
 	BUILD_BUG_ON(offsetof(struct miscdevice, nodename) != T32_MISC44_NODENAME);

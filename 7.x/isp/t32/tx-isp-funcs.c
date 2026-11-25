@@ -100,6 +100,9 @@ MODULE_PARM_DESC(streamoff_mode, "sensor streamoff mode");
 
 struct module *isp_module = THIS_MODULE;
 
+/* the clock parents the firmware matches the sclk names against */
+char *sclk_name[3] = { "sclka", "mpll", "vpll" };
+
 int isp_printf(unsigned int level, unsigned char *fmt, ...)
 {
 	struct va_format vaf;
