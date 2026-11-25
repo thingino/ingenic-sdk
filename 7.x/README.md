@@ -38,7 +38,7 @@ without it every sensor in `7.x/sensor-src/<soc>` is built.
 | T31 | closed firmware 1.1.6 (3.10 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | `ipu.ko` | oss3 | gc4653 |
 | T32 | closed firmware isp_20260618a (5.15 build) + ABI adapter | `soc-vpu-t32.ko` (helix H.264/JPEG, radix H.265) | `ipu-t32.ko` (IPU v13) | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | sc4336p |
 | T33 | closed firmware isp_20260706a (5.15 build) + ABI adapter | `soc-vpu-t33.ko` (helix H.264/JPEG, radix H.265; sources in `vpu/t32`) | `ipu-t33.ko` (IPU v13; sources in `ipu/t32`) | oss3 (AIC, inner codec) | gc5613 |
-| T40 | closed firmware 1.3.1 (4.4.94 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | | oss3 (AIC, inner codec) | imx307 |
+| T40 | closed firmware 1.3.1 (4.4.94 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | | oss3 (AIC, inner codec) | imx307, gc4653 |
 | T41 | closed firmware 1.2.6 (4.4.94 build) + ABI adapter | `avpu.ko` (EL200 H.264/H.265/JPEG) | | oss3 (AIC, inner codec) | gc4023 |
 
 Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`

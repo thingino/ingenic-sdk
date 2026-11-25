@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 # T40 sensors: the vendor drivers, built for 7.x against the adapter in isp/t40
-SENSORS := imx307
+SENSORS := imx307 gc4653
 ccflags-y += -I$(src)/../../isp/t40/include -I$(src)/../../isp/t40
 ccflags-y += -DCONFIG_KERNEL_4_4_94 -Wno-unused-function -Wno-unused-variable -Wno-missing-prototypes -Wno-missing-declarations
 include $(src)/../sensors.mk
