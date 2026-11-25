@@ -511,6 +511,7 @@ static void vpu_remove(struct platform_device *dev)
 
 static const struct of_device_id jz_helix_dt_match[] = {
 	{ .compatible = "ingenic,t32-helix" },
+	{ .compatible = "ingenic,t33-helix" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, jz_helix_dt_match);
@@ -558,7 +559,7 @@ static void __exit vpu_exit(void)
 module_init(vpu_init);
 module_exit(vpu_exit);
 
-MODULE_DESCRIPTION("T32 VPU helix driver");
+MODULE_DESCRIPTION("T32 and T33 VPU helix driver");
 MODULE_AUTHOR("Justin <ptkang@ingenic.cn>");
 MODULE_LICENSE("GPL v2");
 MODULE_VERSION("20171010");

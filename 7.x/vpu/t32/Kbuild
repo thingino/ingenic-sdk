@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: GPL-2.0
-# soc-vpu-t32.ko: the /dev/soc_vpu channel scheduler with the T32 helix (H.264,
-# JPEG) and radix (H.265), vendor SDK 2.0.0 kernel 5.15.170 drivers/video/ingenic_vpu
-ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_PRJ007 -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=2 -Wno-error
+# soc-vpu-<soc>.ko, soc = t32 or t33: the /dev/soc_vpu channel scheduler with
+# the helix (H.264, JPEG) and radix (H.265), vendor SDK 2.0.0 kernel 5.15.170
+# drivers/video/ingenic_vpu. The T33 differs by the vendor's CONFIG_SOC_PRJ008
+# branches, so both SoCs build from this directory.
+prj := $(if $(filter t33,$(SOC_FAMILY)),PRJ008,PRJ007)
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_$(prj) -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=2 -Wno-error
 
-soc-vpu-t32-objs := soc_vpu.o helix.o radix.o
-obj-m += soc-vpu-t32.o
+soc-vpu-$(SOC_FAMILY)-objs := soc_vpu.o helix.o radix.o
+obj-m += soc-vpu-$(SOC_FAMILY).o
