@@ -230,19 +230,107 @@ struct device_node *private_dev_of_node(struct device *dev)
 #define A1_IRQ_XLATE(i)	(i)
 #endif
 
+/*
+ * Interrupt storm guard: the firmware's handlers are written for a 4.4 kernel
+ * that survives an interrupt its handler does not quiesce. Each line the
+ * firmware requests goes through a wrapper that counts calls per second; past
+ * A1_STORM_LIMIT the line is disabled and a1_storm_hook() (a driver may set it
+ * to dump the device's status registers) reports it once.
+ */
+#define A1_STORM_LIMIT	20000
+#define A1_IRQW_MAX	16
+
+struct a1_irqw {
+	unsigned int irq;
+	void *dev;
+	irq_handler_t handler;
+	unsigned long window;
+	unsigned int count;
+	bool dead;
+};
+
+static struct a1_irqw a1_irqw[A1_IRQW_MAX];
+static void (*a1_storm_hook)(unsigned int irq);
+
+static irqreturn_t a1_irq_wrap(int irq, void *p)
+{
+	struct a1_irqw *w = p;
+	irqreturn_t r = w->handler(irq, w->dev);
+
+	if (time_after(jiffies, w->window + HZ)) {
+		w->window = jiffies;
+		w->count = 0;
+	}
+	if (++w->count > A1_STORM_LIMIT && !w->dead) {
+		w->dead = true;
+		disable_irq_nosync(irq);
+		pr_err("a1: interrupt %d storm (%u in one second), line disabled\n", irq, w->count);
+		if (a1_storm_hook)
+			a1_storm_hook(irq);
+	}
+	return r;
+}
+
+static struct a1_irqw *a1_irqw_get(unsigned int irq, void *dev, irq_handler_t h)
+{
+	int i;
+
+	for (i = 0; i < A1_IRQW_MAX; i++) {
+		if (!a1_irqw[i].handler) {
+			a1_irqw[i] = (struct a1_irqw){ .irq = irq, .dev = dev, .handler = h };
+			return &a1_irqw[i];
+		}
+	}
+	return NULL;
+}
+
+static struct a1_irqw *a1_irqw_find(unsigned int irq, void *dev)
+{
+	int i;
+
+	for (i = 0; i < A1_IRQW_MAX; i++)
+		if (a1_irqw[i].handler && a1_irqw[i].irq == irq && a1_irqw[i].dev == dev)
+			return &a1_irqw[i];
+	return NULL;
+}
+
 int private_request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
 			const char *name, void *dev)
 {
-	return request_irq(A1_IRQ_XLATE(irq), handler, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, dev);
+	struct a1_irqw *w;
+	int ret;
+
+	irq = A1_IRQ_XLATE(irq);
+	w = a1_irqw_get(irq, dev, handler);
+	if (!w)
+		return request_irq(irq, handler, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, dev);
+	ret = request_irq(irq, a1_irq_wrap, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, w);
+	if (ret)
+		w->handler = NULL;
+	return ret;
 }
 
 int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
 				 irq_handler_t thread_fn, unsigned long flags,
 				 const char *name, void *dev)
 {
-	return request_threaded_irq(A1_IRQ_XLATE(irq), handler, thread_fn,
-				    flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT),
-				    name, dev);
+	struct a1_irqw *w;
+	int ret;
+
+	irq = A1_IRQ_XLATE(irq);
+	if (!handler || thread_fn)
+		return request_threaded_irq(irq, handler, thread_fn,
+					    flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT),
+					    name, dev);
+	w = a1_irqw_get(irq, dev, handler);
+	if (!w)
+		return request_threaded_irq(irq, handler, thread_fn,
+					    flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT),
+					    name, dev);
+	ret = request_irq(irq, a1_irq_wrap, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, w);
+	if (ret)
+		w->handler = NULL;
+	return ret;
 }
 
 void private_enable_irq(unsigned int irq)
@@ -262,6 +350,13 @@ void private_disable_irq_nosync(unsigned int irq)
 
 void private_free_irq(unsigned int irq, void *dev)
 {
+	struct a1_irqw *w = a1_irqw_find(A1_IRQ_XLATE(irq), dev);
+
+	if (w) {
+		free_irq(w->irq, w);
+		w->handler = NULL;
+		return;
+	}
 	free_irq(A1_IRQ_XLATE(irq), dev);
 }
 

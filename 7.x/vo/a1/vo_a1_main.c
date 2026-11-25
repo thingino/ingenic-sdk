@@ -230,8 +230,34 @@ void private_platform_driver_unregister(void *drv44)
 	platform_driver_unregister(&a1_platform_driver);
 }
 
+/* KSEG1 windows onto the HDMI controller (stride 4) and the VDE interrupt block */
+static void vo_storm_dump(unsigned int irq)
+{
+	void __iomem *h = (void __iomem *)(0xa0000000 | 0x13380000);
+	void __iomem *v = (void __iomem *)(0xa0000000 | 0x13360000);
+	int i;
+
+	pr_err("vo: irq %u: hdmi ih_stat 400..42c:", irq);
+	for (i = 0; i < 12; i++)
+		pr_cont(" %02x", readl(h + 0x400 + 4 * i) & 0xff);
+	pr_cont("\nvo: hdmi ih_mute 600..62c:");
+	for (i = 0; i < 12; i++)
+		pr_cont(" %02x", readl(h + 0x600 + 4 * i) & 0xff);
+	pr_cont("\nvo: hdmi ih_mute 7fc: %02x\nvo: vde intp:", readl(h + 0x7fc) & 0xff);
+	for (i = 0; i < 4; i++)
+		pr_cont(" %08x", readl(v + 4 * i));
+	pr_cont("\nvo: gpio B pin/int/msk/pat1/pat0/pu:");
+	{
+		void __iomem *g = (void __iomem *)(0xa0000000 | 0x10011000);
+
+		pr_cont(" %08x %08x %08x %08x %08x %08x\n", readl(g), readl(g + 0x10), readl(g + 0x20),
+			readl(g + 0x30), readl(g + 0x40), readl(g + 0x110));
+	}
+}
+
 static int __init vo_a1_init(void)
 {
+	a1_storm_hook = vo_storm_dump;
 	return ingenic_vde_init();
 }
 
