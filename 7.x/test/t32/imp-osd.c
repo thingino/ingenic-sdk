@@ -188,7 +188,7 @@ int main(int argc, char **argv)
 	fa.pixFmt = PIX_FMT_NV12;
 	fa.outFrmRateNum = 25;
 	fa.outFrmRateDen = 1;
-	fa.nrVBs = 2;
+	fa.nrVBs = getenv("NRVB") ? atoi(getenv("NRVB")) : 2;
 	fa.type = FS_PHY_CHANNEL;
 	fa.picWidth = W;
 	fa.picHeight = H;

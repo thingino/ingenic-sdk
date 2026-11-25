@@ -5,7 +5,8 @@
  * snapshot channel per group.
  *
  * usage: imp-enc <outdir> <frames> [width height [subw subh]]
- * The sensor is sc4336p at 0x30 (T32LQ), override with SENSOR and I2CADDR.
+ * The sensor is sc4336p at 0x30 (T32LQ), override with SENSOR and I2CADDR,
+ * NRVB sets the main channel buffer count (a 22 MiB rmem fits one 2560x1440).
  * Writes <outdir>/stream-0.h264, stream-1.h264, snap-0-N.jpg, snap-1-N.jpg.
  */
 #include <stdio.h>
@@ -29,6 +30,7 @@
 static const char *outdir;
 static const char *sensor = "sc4336p";
 static int i2caddr = 0x30;
+static int nrvb = 2;
 static int nframes;
 
 struct job {
@@ -151,6 +153,8 @@ int main(int argc, char **argv)
 		sensor = getenv("SENSOR");
 	if (getenv("I2CADDR"))
 		i2caddr = strtol(getenv("I2CADDR"), NULL, 0);
+	if (getenv("NRVB"))
+		nrvb = atoi(getenv("NRVB"));
 	outdir = argv[1];
 	nframes = atoi(argv[2]);
 	if (argc >= 5) {
@@ -178,7 +182,7 @@ int main(int argc, char **argv)
 		fa[i].pixFmt = PIX_FMT_NV12;
 		fa[i].outFrmRateNum = 25;
 		fa[i].outFrmRateDen = 1;
-		fa[i].nrVBs = 2;
+		fa[i].nrVBs = i ? 2 : nrvb;
 		fa[i].type = FS_PHY_CHANNEL;
 		fa[i].picWidth = i ? sw : w;
 		fa[i].picHeight = i ? sh : h;
