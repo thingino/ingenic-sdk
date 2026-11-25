@@ -1,12 +1,12 @@
 # Ingenic modules for mainline Linux 7.x
 
 Out-of-tree kernel modules that run the stock Ingenic userspace (libimp,
-libalog) on mainline Linux 7.x on the T10, T20, T21, T23, T30, T31 and T32.
+libalog) on mainline Linux 7.x on the T10, T20, T21, T23, T30, T31, T32 and T33.
 
-They pair with the kernel branches `ingenic-tNN-7.4` (`ingenic-t10-7.4` ...
-`ingenic-t31-7.4`, T32: the `ingenic-7.4` branch) of https://github.com/gtxaspec/linux, which carry the SoC
-support, the device tree nodes these modules look up (ISP, encoder, IPU, AIC,
-codec) and the `rmem=` carve-out.
+They pair with the single kernel branch `ingenic-7.4` (T10 to T33, one
+`ingenic_tNN_defconfig` per SoC) of https://github.com/gtxaspec/linux, which
+carries the SoC support, the device tree nodes these modules look up (ISP,
+encoder, IPU, AIC, codec) and the `rmem=` carve-out.
 
 ## Build
 
@@ -14,7 +14,8 @@ codec) and the `rmem=` carve-out.
 KDIR=/path/to/linux-7.4-build CROSS_COMPILE=mipsel-linux- ./build.sh t31 7.x
 ```
 
-`KDIR` is the configured kernel tree (or its `O=` build directory). One `M=`
+`KDIR` is the kernel tree built from the SoC's `ingenic_tNN_defconfig` (or
+its `O=` build directory). One `M=`
 pass builds every module of the SoC; the `.ko` files land next to their
 sources under `7.x/`. The T10 uses the T20 ISP, encoder and sensor sources,
 built under T10 names.
@@ -65,6 +66,8 @@ The stock libimp of each SoC, on a board with the matching sensor:
 | T23 | H.264 | yes | playback and capture path | |
 | T30 | H.264, H.265 | yes | loopback | |
 | T31 | H.264 main + sub stream, JPEG | yes | loopback | RTSP streaming |
+| T32 | H.264 main + sub stream, JPEG | yes | | |
+| T33 | H.264 main + sub stream | yes (QEMU) | | QEMU only |
 
 ## Tests
 
