@@ -21,6 +21,7 @@
 #include <linux/dmaengine.h>
 #include "include/audio_dsp.h"
 #include "include/audio_debug.h"
+#include "include/audio_dmic.h"
 
 /*
  * BSP exposed dma_device->get_current_trans_addr to query the current DMA
@@ -61,6 +62,9 @@ static int fragment_time = 20; // a frame of time
 module_param(fragment_time, int, S_IRUGO);
 MODULE_PARM_DESC(fragment_time, "The unit of the time of fragment is ms");
 
+static int dmic_enable = 0; // disable dmic
+module_param(dmic_enable, int, S_IRUGO);
+MODULE_PARM_DESC(dmic_enable, "Enable or disable dmic");
 
 static int aic_enable = 1; // enable aic
 module_param(aic_enable, int, S_IRUGO);
@@ -72,9 +76,11 @@ struct audio_dsp_device* globe_dspdev = NULL;
 
 struct audio_dsp_debug mic_debug;
 struct audio_dsp_debug spk_debug;
+struct audio_dsp_debug dmic_debug;
 int dump_time_stamp;
 
 static struct __kernel_old_timeval amic_base_tv;
+static struct __kernel_old_timeval dmic_base_tv;
 static struct __kernel_old_timeval spk_base_tv;
 
 //extern void jzdma_dump(struct dma_chan *chan);
@@ -110,9 +116,11 @@ static void dsp_workqueue_handle(struct work_struct *work)
 	struct audio_dsp_device *dsp = container_of(work,
 			struct audio_dsp_device, workqueue);
 	struct audio_route *amic_route = NULL;
+	struct audio_route *dmic_route = NULL;
 	struct audio_route *aec_route = NULL;
 	struct audio_route *ao_route = NULL;
 	unsigned int amic_new_tracer = 0;
+	unsigned int dmic_new_tracer = 0;
 	unsigned int aec_new_tracer = 0;
 	unsigned int ao_new_tracer = 0;
 	unsigned int dma_tracer = 0;
@@ -129,6 +137,11 @@ static void dsp_workqueue_handle(struct work_struct *work)
 	amic_route = &(dsp->routes[AUDIO_ROUTE_AMIC_ID]);
 	if(amic_route && amic_route->state == AUDIO_BUSY_STATE){
 		amic_new_tracer = amic_route->manage.new_dma_tracer;
+	}
+	/* dmic */
+	dmic_route = &(dsp->routes[AUDIO_ROUTE_DMIC_ID]);
+	if(dmic_route && dmic_route->state == AUDIO_BUSY_STATE){
+		dmic_new_tracer = dmic_route->manage.new_dma_tracer;
 	}
 	/* aec */
 	aec_route = &(dsp->routes[AUDIO_ROUTE_AEC_ID]);
@@ -147,6 +160,9 @@ static void dsp_workqueue_handle(struct work_struct *work)
 		}
 		if(ao_route && ao_route->state == AUDIO_BUSY_STATE) {
 			printk("spk: index = %d, fragment->time_stamp.tv_sec=%ld, fragment->time_stamp.tv_usec = %ld\n",ao_route->manage.new_dma_tracer, spk_base_tv.tv_sec, spk_base_tv.tv_usec);
+		}
+		if(dmic_route && dmic_route->state == AUDIO_BUSY_STATE) {
+			printk("dmic: index = %d, fragment->time_stamp.tv_sec=%ld, fragment->time_stamp.tv_usec = %ld\n",dmic_route->manage.new_dma_tracer, dmic_base_tv.tv_sec, dmic_base_tv.tv_usec);
 		}
 	}
 	/* sync amic and amic's aec */
@@ -232,6 +248,71 @@ static void dsp_workqueue_handle(struct work_struct *work)
 			}
 		}
 		mutex_unlock(&amic_route->mlock);
+	}
+	/* sync dmic and dmic's aec */
+	if(dmic_route->pipe){
+		mutex_lock(&dmic_route->mlock);
+//		printk("dsp_workqueue_handle: dmic_route->manage.io_tracer = %u, dmic_route->manage.dma_tracer = %u, dmic_route->manage.new_dma_tracer = %u\n",dmic_route->manage.io_tracer, dmic_route->manage.dma_tracer, dmic_route->manage.new_dma_tracer);
+		if(dmic_route->state == AUDIO_BUSY_STATE){
+			io_late = 0;
+			if(dsp->dmic_aec && aec_route){
+				/* dmic enable aec */
+				dma_tracer = dmic_route->manage.dma_tracer;
+				aec_tracer = dmic_route->manage.aec_dma_tracer;
+				while(dma_tracer != dmic_new_tracer && aec_tracer != aec_new_tracer){
+					dmic_route->manage.fragments[dma_tracer].priv = &(aec_route->manage.fragments[aec_tracer]);
+					dmic_route->manage.fragments[dma_tracer].state = true;
+					if(dma_tracer == dmic_route->manage.io_tracer)
+						io_late = 1;
+					dma_tracer = (dma_tracer + 1) % dmic_route->manage.fragment_cnt;
+					aec_tracer = (aec_tracer + 1) % aec_route->manage.fragment_cnt;
+				}
+				dmic_route->manage.dma_tracer = dma_tracer;
+				dmic_route->manage.aec_dma_tracer = aec_tracer;
+
+			}else{
+				/* dmic disable aec */
+				dma_tracer = dmic_route->manage.dma_tracer;
+				while(dma_tracer != dmic_new_tracer){
+					dmic_route->manage.fragments[dma_tracer].priv = NULL;
+					dmic_route->manage.fragments[dma_tracer].state = true;
+					if(dma_tracer == dmic_route->manage.io_tracer)
+						io_late = 1;
+					dma_tracer = (dma_tracer + 1) % dmic_route->manage.fragment_cnt;
+				}
+				dmic_route->manage.dma_tracer = dma_tracer;
+			}
+			/* clear dma prepare-buffer and sync io_tracer */
+			for(cnt = 1; cnt <= AUDIO_IO_LEADING_DMA; cnt++){
+				index = (dmic_new_tracer + cnt) % dmic_route->manage.fragment_cnt;
+				if(dmic_route->manage.fragments[index].state){
+					dmic_route->manage.fragments[index].state = false;
+					dmic_route->manage.fragments[index].priv = NULL;
+					increase_frame_time_ms(&dmic_base_tv, fragment_time);
+				}
+				if(index == dmic_route->manage.io_tracer)
+					io_late = 1;
+			}
+			if(io_late){
+				dmic_route->manage.io_tracer = (index + 1) % dmic_route->manage.fragment_cnt;
+				++dmic_debug.io_late_cnt;
+			}
+		}
+		/* wait second copy data */
+		if(dmic_route->wait_flag){
+			cnt = 0;
+			dma_tracer = dmic_route->manage.dma_tracer;
+			io_tracer = dmic_route->manage.io_tracer;
+			while(io_tracer != dma_tracer){
+				cnt++;
+				io_tracer = (io_tracer + 1) % dmic_route->manage.fragment_cnt;
+			}
+			if(cnt >= dmic_route->wait_cnt){
+				dmic_route->wait_flag = false;
+				complete(&dmic_route->done_completion);
+			}
+		}
+		mutex_unlock(&dmic_route->mlock);
 	}
 	/* ao */
 	if(ao_route){
@@ -336,47 +417,50 @@ static enum hrtimer_restart jz_audio_hrtimer_callback(struct hrtimer *hr_timer) 
 	for(id = 0; id < AUDIO_ROUTE_MAX_ID; id++){
 		route = &(dsp->routes[id]);
 		if(route && route->state == AUDIO_BUSY_STATE){
-				pipe = route->pipe;
+			pipe = route->pipe;
+			if (route->index == AUDIO_ROUTE_DMIC_ID)
+				dma_currentaddr = ingenic_dmic_get_dma_current_trans_addr();
+			else
 				dma_currentaddr = pipe_dma_pos(pipe, route->manage.buffersize);
-				index = (dma_currentaddr - pipe->paddr) / route->manage.fragment_size % route->manage.fragment_cnt;
+			index = (dma_currentaddr - pipe->paddr) / route->manage.fragment_size % route->manage.fragment_cnt;
 
-				route->manage.new_dma_tracer = index;
-				if(route->index == AUDIO_ROUTE_AMIC_ID || route->index == AUDIO_ROUTE_SPK_ID){
-					ktime_get_raw_ts64(&ts);
-					time_usec = time_stamp = (int64_t)((int64_t)ts.tv_sec * 1000000 + (int64_t)(ts.tv_nsec/1000));
-					tv.tv_usec = do_div(time_stamp , 1000000);
-					tv.tv_sec = time_stamp;
-					route->manage.fragments[index].time_stamp = tv;
-					if(index ==  route->manage.fragment_cnt - 1){
-						time_usec_1 = time_usec - 20000;
-						tv.tv_usec = do_div(time_usec_1, 1000000);
-						tv.tv_sec = time_usec_1;
-						route->manage.fragments[route->manage.fragment_cnt-2].time_stamp = tv;
-						time_usec_2 = time_usec + 20000;
-						tv.tv_usec = do_div(time_usec_2, 1000000);
-						tv.tv_sec = time_usec_2;
-						route->manage.fragments[0].time_stamp = tv;
-					}else if(index == 0){
-						time_usec_1 = time_usec - 20000;
-						tv.tv_usec = do_div(time_usec_1, 1000000);
-						tv.tv_sec = time_usec_1;
-						route->manage.fragments[route->manage.fragment_cnt-1].time_stamp = tv;
-						time_usec_2 = time_usec + 20000;
-						tv.tv_usec = do_div(time_usec_2, 1000000);
-						tv.tv_sec = time_usec_2;
-						route->manage.fragments[index+1].time_stamp = tv;
-					}else{
-					    time_usec_1 = time_usec - 20000;
-						tv.tv_usec = do_div(time_usec_1, 1000000);
-						tv.tv_sec = time_usec_1;
-						route->manage.fragments[index - 1].time_stamp = tv;
-						time_usec_2 = time_usec + 20000;
-						tv.tv_usec = do_div(time_usec_2, 1000000);
-						tv.tv_sec = time_usec_2;
-						route->manage.fragments[index + 1].time_stamp = tv;
-					}
-//					printk("jz_audio_hrtimer_callback: tv.tv_sec=%ld,tv.tv_usec = %ld\n",tv.tv_sec,tv.tv_usec);
+			route->manage.new_dma_tracer = index;
+			if(route->index == AUDIO_ROUTE_AMIC_ID || route->index == AUDIO_ROUTE_SPK_ID){
+				ktime_get_raw_ts64(&ts);
+				time_usec = time_stamp = (int64_t)((int64_t)ts.tv_sec * 1000000 + (int64_t)(ts.tv_nsec/1000));
+				tv.tv_usec = do_div(time_stamp , 1000000);
+				tv.tv_sec = time_stamp;
+				route->manage.fragments[index].time_stamp = tv;
+				if(index ==  route->manage.fragment_cnt - 1){
+					time_usec_1 = time_usec - 20000;
+					tv.tv_usec = do_div(time_usec_1, 1000000);
+					tv.tv_sec = time_usec_1;
+					route->manage.fragments[route->manage.fragment_cnt-2].time_stamp = tv;
+					time_usec_2 = time_usec + 20000;
+					tv.tv_usec = do_div(time_usec_2, 1000000);
+					tv.tv_sec = time_usec_2;
+					route->manage.fragments[0].time_stamp = tv;
+				}else if(index == 0){
+					time_usec_1 = time_usec - 20000;
+					tv.tv_usec = do_div(time_usec_1, 1000000);
+					tv.tv_sec = time_usec_1;
+					route->manage.fragments[route->manage.fragment_cnt-1].time_stamp = tv;
+					time_usec_2 = time_usec + 20000;
+					tv.tv_usec = do_div(time_usec_2, 1000000);
+					tv.tv_sec = time_usec_2;
+					route->manage.fragments[index+1].time_stamp = tv;
+				}else{
+				    time_usec_1 = time_usec - 20000;
+					tv.tv_usec = do_div(time_usec_1, 1000000);
+					tv.tv_sec = time_usec_1;
+					route->manage.fragments[index - 1].time_stamp = tv;
+					time_usec_2 = time_usec + 20000;
+					tv.tv_usec = do_div(time_usec_2, 1000000);
+					tv.tv_sec = time_usec_2;
+					route->manage.fragments[index + 1].time_stamp = tv;
 				}
+//					printk("jz_audio_hrtimer_callback: tv.tv_sec=%ld,tv.tv_usec = %ld\n",tv.tv_sec,tv.tv_usec);
+			}
 //				printk("jz_audio_hrtimer_callback:id = %d dma_currentaddr = 0x%08x\n",id, dma_currentaddr);
 //				printk("jz_audio_hrtimer_callback:id = %d index = %d\n", id,index);
 		}
@@ -605,29 +689,35 @@ static long dsp_create_dma_chan(struct audio_route *route)
 	}
 	manage->buffersize = manage->fragment_cnt * manage->fragment_size;
 	memset(pipe->vaddr, 0, manage->buffersize);
-	dma_sync_single_for_device(globe_aic->dev, pipe->paddr, manage->buffersize,
-				   pipe->dma_config.direction == DMA_MEM_TO_DEV ?
-				   DMA_TO_DEVICE : DMA_FROM_DEVICE);
+	if (route->index == AUDIO_ROUTE_DMIC_ID) {
+		dma_sync_single_for_device(audio_dmic_dev(), pipe->paddr, manage->buffersize,
+					   DMA_FROM_DEVICE);
+		ingenic_dmic_dma_init(pipe->paddr, manage->fragment_size, manage->fragment_cnt);
+	} else {
+		dma_sync_single_for_device(globe_aic->dev, pipe->paddr, manage->buffersize,
+					   pipe->dma_config.direction == DMA_MEM_TO_DEV ?
+					   DMA_TO_DEVICE : DMA_FROM_DEVICE);
 
-	dmaengine_slave_config(pipe->dma_chan, &pipe->dma_config);
+		dmaengine_slave_config(pipe->dma_chan, &pipe->dma_config);
 
-	/*
-	 * One period per fragment: jz4780-dma updates the residue and raises
-	 * its interrupt only at period ends, and only when a callback is set.
-	 * The position is polled by the hrtimer, so the callback does nothing.
-	 */
-	desc = dmaengine_prep_dma_cyclic(pipe->dma_chan, pipe->paddr,
-					 manage->buffersize, manage->fragment_size,
-					 pipe->dma_config.direction, flags);
-	if (!desc) {
-		dev_err(globe_aic->dev, "cannot prepare slave dma\n");
-		ret = -EINVAL;
-		goto out;
+		/*
+		 * One period per fragment: jz4780-dma updates the residue and raises
+		 * its interrupt only at period ends, and only when a callback is set.
+		 * The position is polled by the hrtimer, so the callback does nothing.
+		 */
+		desc = dmaengine_prep_dma_cyclic(pipe->dma_chan, pipe->paddr,
+						 manage->buffersize, manage->fragment_size,
+						 pipe->dma_config.direction, flags);
+		if (!desc) {
+			dev_err(globe_aic->dev, "cannot prepare slave dma\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		desc->callback = dsp_cyclic_dma_callback;
+		desc->callback_param = NULL;
+
+		dmaengine_submit(desc);
 	}
-	desc->callback = dsp_cyclic_dma_callback;
-	desc->callback_param = NULL;
-
-	dmaengine_submit(desc);
 
 out:
 	return ret;
@@ -644,8 +734,11 @@ static int dsp_destroy_dma_chan(struct audio_route *route)
 	/* deinit fragments manage and dma channel */
 	manage = &route->manage;
 	pipe = route->pipe;
-	dmaengine_terminate_all(pipe->dma_chan);
+	if (route->index != AUDIO_ROUTE_DMIC_ID)
+		dmaengine_terminate_all(pipe->dma_chan);
 
+	if (route->index == AUDIO_ROUTE_DMIC_ID)
+		ingenic_dmic_dma_deinit();
 
 	/* destroy fragments manage */
 	if(manage->fragments){
@@ -819,6 +912,165 @@ exit:
 	return ret;
 }
 
+static long dsp_enable_dmic_ai(struct audio_dsp_device *dsp)
+{
+	unsigned long lock_flags;
+	struct audio_route *ai_route = NULL;
+	long ret = AUDIO_SUCCESS;
+
+	ai_route = &(dsp->routes[AUDIO_ROUTE_DMIC_ID]);
+	if(ai_route == NULL || ai_route->pipe == NULL){
+		audio_warn_print("The route of dmic record hasn't been created!\n");
+		ret = -EPERM;
+		return ret;
+	}
+
+	mutex_lock(&ai_route->mlock);
+	if(ai_route->state == AUDIO_BUSY_STATE){
+		ai_route->refcnt++;
+		mutex_unlock(&ai_route->mlock);
+		return AUDIO_SUCCESS;
+	}
+	/* config the dma channels of  ai and aec */
+	ret = dsp_create_dma_chan(ai_route);
+	if(ret != AUDIO_SUCCESS){
+		goto out;
+	}
+
+	/* enable dma chan */
+//	dma_async_issue_pending(ai_route->pipe->dma_chan);
+
+	/* enable hardware */
+	ret = ai_route->pipe->ioctl(ai_route->pipe, AUDIO_CMD_ENABLE_STREAM, NULL);
+	if(ret != AUDIO_SUCCESS){
+		goto out_cmd;
+	}
+
+	spin_lock_irqsave(&dsp->slock, lock_flags);
+	ai_route->state = AUDIO_BUSY_STATE;
+	ai_route->manage.dma_tracer = 0;
+	ai_route->manage.new_dma_tracer = 0;
+	//ai_route->manage.io_tracer = ai_route->manage.fragment_cnt - 1 - AUDIO_IO_LEADING_DMA;
+	ai_route->manage.io_tracer = ai_route->manage.fragment_cnt  - AUDIO_IO_LEADING_DMA;
+	ai_route->refcnt++;
+	init_completion(&(ai_route->done_completion));
+	spin_unlock_irqrestore(&dsp->slock, lock_flags);
+
+	mutex_unlock(&ai_route->mlock);
+
+	get_frame_raw_time(&dmic_base_tv);
+	return ret;
+out_cmd:
+	dsp_destroy_dma_chan(ai_route);
+out:
+	spin_lock_irqsave(&dsp->slock, lock_flags);
+	ai_route->state = AUDIO_OPEN_STATE;
+	spin_unlock_irqrestore(&dsp->slock, lock_flags);
+	mutex_unlock(&ai_route->mlock);
+	return ret;
+}
+
+static long dsp_enable_dmic_aec(struct audio_dsp_device *dsp, unsigned long arg)
+{
+	unsigned long lock_flags;
+	struct audio_route *ai_route = NULL;
+	struct audio_route *aec_route = NULL;
+	struct audio_pipe *ai_pipe = NULL;
+	struct audio_pipe *aec_pipe = NULL;
+	dma_addr_t ai_currentaddr = 0;
+	dma_addr_t aec_currentaddr = 0;
+	int ai_offset = 0, aec_offset = 0;
+	long ret = AUDIO_SUCCESS;
+	int dsp_amic_aec_status = 0;
+
+	ai_route = &(dsp->routes[AUDIO_ROUTE_DMIC_ID]);
+	if(ai_route == NULL || ai_route->pipe == NULL){
+		audio_warn_print("The route of dmic record hasn't been created!\n");
+		ret = -EPERM;
+		return ret;
+	}
+	dsp_amic_aec_status = dsp->amic_aec;
+
+	mutex_lock(&ai_route->mlock);
+	if(ai_route->state != AUDIO_BUSY_STATE){
+		audio_warn_print("please enable dmic firstly!\n");
+		ret = -EPERM;
+		goto out;
+	}
+
+	ai_pipe = ai_route->pipe;
+	aec_route = &(dsp->routes[AUDIO_ROUTE_AEC_ID]);
+
+	{
+		/* config aec route */
+		struct audio_parameter param;
+		param.rate = ai_route->rate;
+		param.format = ai_route->format;
+		param.channel = 1;	// default value
+		mutex_lock(&dsp->mlock);
+		ret = dsp_config_aec_route_param(dsp, AUDIO_CMD_CONFIG_PARAM, &param);
+		if(ret != AUDIO_SUCCESS){
+			audio_warn_print("%d; Failed to config aec parameter!\n",__LINE__);
+			audio_warn_print("%d; The parameters are invalid, DMIC(rate = %d, format = %d) AEC(rate = %d, format = %d)!\n",
+					__LINE__, ai_route->rate, ai_route->format, aec_route->rate, aec_route->format);
+			ret = -EPERM;
+			mutex_unlock(&dsp->mlock);
+			goto out;
+		}
+		mutex_unlock(&dsp->mlock);
+		ret = dsp_enable_amic_ai_and_aec(dsp);
+		if(ret != AUDIO_SUCCESS){
+			audio_warn_print("%d; Failed to enable aec route!\n",__LINE__);
+			ret = -EPERM;
+			goto out_failed;
+		}
+	}
+
+	aec_pipe = aec_route->pipe;
+	spin_lock_irqsave(&dsp->slock, lock_flags);
+	dsp->dmic_aec = true;
+	/* sync dma_tracer and aec_dma_tracer */
+//	ai_currentaddr = ai_pipe->dma_chan->device->get_current_trans_addr(ai_pipe->dma_chan, NULL, NULL,
+//				ai_pipe->dma_config.direction);
+	ai_currentaddr = ingenic_dmic_get_dma_current_trans_addr();
+	aec_currentaddr = pipe_dma_pos(aec_pipe, aec_route->manage.buffersize);
+	ai_offset = (ai_currentaddr - ai_pipe->paddr)/ai_route->manage.fragment_size;  //dmic offset
+	aec_offset = (aec_currentaddr - aec_pipe->paddr)/aec_route->manage.fragment_size;  //aec offset
+	/* now is dmic first open and aec last open */
+	if (dsp_amic_aec_status == false) {
+		ai_route->manage.dma_tracer = (ai_offset-aec_offset)>=0?(ai_offset-aec_offset):(ai_route->manage.fragment_cnt-1-(aec_offset-ai_offset)+ai_offset);
+		ai_route->manage.aec_dma_tracer = 0;
+		//ai_route->manage.io_tracer = ((ai_route->manage.io_tracer+ai_route->manage.dma_tracer)%(ai_route->manage.fragment_cnt-1)) - 1;   //maybe error
+		ai_route->manage.io_tracer = ((ai_route->manage.dma_tracer+ai_route->manage.fragment_cnt-1)%ai_route->manage.fragment_cnt);   //still right
+	} else {
+	/* now is aec first open and dmic last open */
+		ai_route->manage.dma_tracer = 0;
+		ai_route->manage.aec_dma_tracer = (aec_offset-ai_offset)>=0?(aec_offset-ai_offset):(ai_route->manage.fragment_cnt-1+aec_offset-(ai_offset-aec_offset));
+		ai_route->manage.io_tracer = ai_route->manage.fragment_cnt - 1 - AUDIO_IO_LEADING_DMA;
+	}
+
+	/* calculate sample offset between dmic and aec */
+	ai_offset = (ai_currentaddr - ai_pipe->paddr) % ai_route->manage.fragment_size;
+	aec_offset = (aec_currentaddr - aec_pipe->paddr) % aec_route->manage.fragment_size;
+	ai_route->aec_sample_offset = (ai_offset / ai_route->manage.sample_size) - (aec_offset / aec_route->manage.sample_size);
+	spin_unlock_irqrestore(&dsp->slock, lock_flags);
+
+	if(arg) {
+		ret = copy_to_user((__user void*)arg, &ai_route->aec_sample_offset, sizeof(ai_route->aec_sample_offset));
+		if(ret){
+			audio_warn_print("%d: failed to copy_to_user!\n", __LINE__);
+			ret = -EIO;
+			goto out;
+		}
+	}
+	mutex_unlock(&ai_route->mlock);
+	return ret;
+out_failed:
+	dsp_config_aec_route_param(dsp, AUDIO_CMD_CONFIG_PARAM, NULL);
+out:
+	mutex_unlock(&ai_route->mlock);
+	return ret;
+}
 
 static long dsp_enable_amic_ao(struct audio_dsp_device *dsp)
 {
@@ -1003,6 +1255,102 @@ out:
 	return ret;
 }
 
+static long dsp_disable_dmic_aec(struct audio_dsp_device *dsp)
+{
+	unsigned long lock_flags;
+	struct audio_route *ai_route = NULL;
+	long ret = AUDIO_SUCCESS;
+
+	if(dsp->dmic_aec == false)
+		return ret;
+
+	ai_route = &(dsp->routes[AUDIO_ROUTE_DMIC_ID]);
+	if(ai_route == NULL || ai_route->pipe == NULL){
+		audio_warn_print("The route of dmic record hasn't been created!\n");
+		ret = -EPERM;
+		return ret;
+	}
+
+	mutex_lock(&ai_route->mlock);
+	if(ai_route->state != AUDIO_BUSY_STATE){
+		goto out;
+	}
+
+	if(dsp->dmic_aec)
+		dsp_disable_amic_ai_and_aec(dsp);
+
+	spin_lock_irqsave(&dsp->slock, lock_flags);
+	dsp->dmic_aec = false;
+	spin_unlock_irqrestore(&dsp->slock, lock_flags);
+
+out:
+	mutex_unlock(&ai_route->mlock);
+	return ret;
+}
+
+static long dsp_disable_dmic_ai(struct audio_dsp_device *dsp)
+{
+	unsigned long lock_flags;
+	struct audio_route *ai_route = NULL;
+	long ret = AUDIO_SUCCESS;
+
+	ai_route = &(dsp->routes[AUDIO_ROUTE_DMIC_ID]);
+	if(ai_route == NULL){
+		audio_warn_print("%d; The route of dmic record hasn't been created!\n",__LINE__);
+		ret = -EPERM;
+		goto exit;
+	}
+
+	mutex_lock(&ai_route->mlock);
+	if(ai_route->refcnt == 0)
+		goto out;
+	ai_route->refcnt--;
+	if(ai_route->state != AUDIO_BUSY_STATE || ai_route->refcnt){
+		mutex_unlock(&ai_route->mlock);
+		return AUDIO_SUCCESS;
+	}
+
+	/* disable hardware */
+	ret = ai_route->pipe->ioctl(ai_route->pipe, AUDIO_CMD_DISABLE_STREAM, NULL);
+	if(ret != AUDIO_SUCCESS){
+		goto out_cmd;
+	}
+
+	/* destroy the dma channels of  ai and aec */
+	ret = dsp_destroy_dma_chan(ai_route);
+
+	if(dsp->dmic_aec)
+		dsp_disable_amic_ai_and_aec(dsp);
+
+	spin_lock_irqsave(&dsp->slock, lock_flags);
+	ai_route->state = AUDIO_OPEN_STATE;
+	ai_route->aec_sample_offset = 0;
+	dsp->dmic_aec = false;
+	ai_route->manage.dma_tracer = 0;
+	ai_route->manage.io_tracer = 0;
+	ai_route->manage.aec_dma_tracer = 0;
+	ai_route->refcnt = 0;
+	ai_route->rate = 0;
+	spin_unlock_irqrestore(&dsp->slock, lock_flags);
+
+	if(ai_route->wait_flag){
+		ai_route->wait_flag = false;
+		complete(&ai_route->done_completion);
+	}
+	memset(&dmic_debug, 0, sizeof(dmic_debug));
+	dump_time_stamp = 0;
+	mutex_unlock(&ai_route->mlock);
+	return ret;
+out_cmd:
+	audio_err_print("%d; Failed to disable hardware!\n",__LINE__);
+	spin_lock_irqsave(&dsp->slock, lock_flags);
+	ai_route->state = AUDIO_OPEN_STATE;
+	spin_unlock_irqrestore(&dsp->slock, lock_flags);
+out:
+	mutex_unlock(&ai_route->mlock);
+exit:
+	return ret;
+}
 
 static long dsp_get_mic_stream(struct audio_dsp_device *dsp, enum auido_route_index index, unsigned long arg)
 {
@@ -1020,7 +1368,9 @@ static long dsp_get_mic_stream(struct audio_dsp_device *dsp, enum auido_route_in
 	long ret = AUDIO_SUCCESS;
 
 	struct device *dev;
-	dev = globe_aic->dev;
+	struct audio_dsp_debug *dbg = index == AUDIO_ROUTE_DMIC_ID ? &dmic_debug : &mic_debug;
+	struct __kernel_old_timeval *base_tv = index == AUDIO_ROUTE_DMIC_ID ? &dmic_base_tv : &amic_base_tv;
+	dev = index == AUDIO_ROUTE_DMIC_ID ? audio_dmic_dev() : globe_aic->dev;
 
 	ai_route = &(dsp->routes[index]);
 	aec_route = &(dsp->routes[AUDIO_ROUTE_AEC_ID]);
@@ -1068,7 +1418,7 @@ static long dsp_get_mic_stream(struct audio_dsp_device *dsp, enum auido_route_in
 		}
 	}
 	//debug
-	mic_debug.start_time = ktime_get();
+	dbg->start_time = ktime_get();
 
 again:
 	if(ai_route->state != AUDIO_BUSY_STATE)
@@ -1076,8 +1426,8 @@ again:
 	dma_tracer = manage->dma_tracer;
 	io_tracer = manage->io_tracer;
 	//debug
-	mic_debug.dma_tracer_debug = dma_tracer;
-	mic_debug.io_tracer_debug = io_tracer;
+	dbg->dma_tracer_debug = dma_tracer;
+	dbg->io_tracer_debug = io_tracer;
 
 //	printk("dsp_get_mic_stream:cnt = %d,dma_tracer = %u, io_tracer = %u\n",cnt,dma_tracer,io_tracer);
 	/* first copy */
@@ -1102,11 +1452,11 @@ again:
 				goto out;
 			}
 			dma_sync_single_for_device(dev, fragment->paddr, manage->fragment_size, DMA_FROM_DEVICE);
-			++mic_debug.copy_to_user_calls;
-			if(!time_before(jiffies, mic_debug.start_jiffies + HZ)) {
-				mic_debug.start_jiffies = jiffies;
-				mic_debug.frame_rate = mic_debug.copy_to_user_calls;
-				mic_debug.copy_to_user_calls = 0;
+			++dbg->copy_to_user_calls;
+			if(!time_before(jiffies, dbg->start_jiffies + HZ)) {
+				dbg->start_jiffies = jiffies;
+				dbg->frame_rate = dbg->copy_to_user_calls;
+				dbg->copy_to_user_calls = 0;
 			}
 			/* copy aec data */
 			if(dsp->amic_aec && (stream.aec != NULL)){
@@ -1125,13 +1475,13 @@ again:
 			}
 			fragment->state = false;
 			if(i) {
-					mic_debug.end_time = ktime_get();
-					mic_debug.time_debug = ktime_to_ms(ktime_sub(mic_debug.end_time, mic_debug.start_time));
-					mic_debug.time_diff_ms = mic_debug.time_debug;
-					mic_debug.time_debug = 0;
+					dbg->end_time = ktime_get();
+					dbg->time_debug = ktime_to_ms(ktime_sub(dbg->end_time, dbg->start_time));
+					dbg->time_diff_ms = dbg->time_debug;
+					dbg->time_debug = 0;
 				}
 		}
-		if (stream.timestamp && copy_to_user((__user void *)stream.timestamp, &amic_base_tv,
+		if (stream.timestamp && copy_to_user((__user void *)stream.timestamp, base_tv,
 						     sizeof(struct __kernel_old_timeval))) {
 			ret = -EFAULT;
 			goto out;
@@ -1139,7 +1489,7 @@ again:
 		fragment->priv = NULL;
 		i++;
 		io_tracer = (io_tracer + 1) % manage->fragment_cnt;
-		increase_frame_time_ms(&amic_base_tv, fragment_time);
+		increase_frame_time_ms(base_tv, fragment_time);
 	}
 	manage->io_tracer = io_tracer;
 	/* second copy */
@@ -1282,9 +1632,13 @@ static int disable_route_stream(struct audio_route *route)
 	switch(route->index){
 		case AUDIO_ROUTE_AEC_ID:
 			ret = dsp_disable_amic_aec(route->priv);
+			ret = dsp_disable_dmic_aec(route->priv);
 			break;
 		case AUDIO_ROUTE_AMIC_ID:
 			ret = dsp_disable_amic_ai_and_aec(route->priv);
+			break;
+		case AUDIO_ROUTE_DMIC_ID:
+			ret = dsp_disable_dmic_ai(route->priv);
 			break;
 		case AUDIO_ROUTE_SPK_ID:
 			ret = dsp_disable_amic_ao(route->priv);
@@ -1312,6 +1666,8 @@ static int dsp_open(struct inode *inode, struct file *file)
 	}
 
 	for(index = 0; index < AUDIO_ROUTE_MAX_ID; index++){
+		if(index == AUDIO_ROUTE_DMIC_ID && dmic_enable == 0)
+			continue;
 		route = &(dsp->routes[index]);
 		if(route && route->state == AUDIO_IDLE_STATE){
 			if(route->pipe && route->pipe->init)
@@ -1425,6 +1781,7 @@ static long dsp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 	struct audio_parameter param;
 	struct volume vol;
 	struct alc_gain alc;
+	int dmic_vol = 0;
 	int codec = 0;
 	int enable = 0;
 	int channel = 0;
@@ -1505,11 +1862,44 @@ static long dsp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			}
 			mutex_unlock(&dsp->mlock);
 			break;
+		case DMIC_AI_SET_PARAM:
+			mutex_lock(&dsp->mlock);
+			ret = copy_from_user(&param, (__user void*)arg, sizeof(param));
+			if(ret){
+				audio_warn_print("%d: failed to copy_from_user!\n", __LINE__);
+				ret = -EIO;
+				goto EXIT_IOCTRL;
+			}
+			ret = dsp_config_route_param(dsp, AUDIO_ROUTE_DMIC_ID, AUDIO_CMD_CONFIG_PARAM, &param);
+			mutex_unlock(&dsp->mlock);
+			break;
+		case DMIC_AI_GET_PARAM:
+			mutex_lock(&dsp->mlock);
+			route = &(dsp->routes[AUDIO_ROUTE_DMIC_ID]);
+			if(route && arg){
+				param.rate = route->rate;
+				param.channel = route->channel;
+				param.format = route->format;
+				ret = copy_to_user((__user void*)arg, &param, sizeof(param));
+				if(ret){
+					audio_warn_print("%d: failed to copy_to_user!\n", __LINE__);
+					ret = -EIO;
+					goto EXIT_IOCTRL;
+				}
+			}
+			mutex_unlock(&dsp->mlock);
+			break;
 		case AMIC_AI_ENABLE_STREAM:
 			ret = dsp_enable_amic_ai_and_aec(dsp);
 			break;
 		case AMIC_ENABLE_AEC:
 			ret = dsp_enable_amic_aec(dsp, arg);
+			break;
+		case DMIC_AI_ENABLE_STREAM:
+			ret = dsp_enable_dmic_ai(dsp);
+			break;
+		case DMIC_ENABLE_AEC:
+			ret = dsp_enable_dmic_aec(dsp, arg);
 			break;
 		case AMIC_AO_ENABLE_STREAM:
 			ret = dsp_enable_amic_ao(dsp);
@@ -1523,14 +1913,23 @@ static long dsp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case AMIC_DISABLE_AEC:
 			ret = dsp_disable_amic_aec(dsp);
 			break;
+		case DMIC_DISABLE_AEC:
+			ret = dsp_disable_dmic_aec(dsp);
+			break;
 		case AMIC_AI_DISABLE_STREAM:
 			ret = dsp_disable_amic_ai_and_aec(dsp);
+			break;
+		case DMIC_AI_DISABLE_STREAM:
+			ret = dsp_disable_dmic_ai(dsp);
 			break;
 		case AMIC_AO_DISABLE_STREAM:
 			ret = dsp_disable_amic_ao(dsp);
 			break;
 		case AMIC_AI_GET_STREAM:
 			ret = dsp_get_mic_stream(dsp, AUDIO_ROUTE_AMIC_ID, arg);
+			break;
+		case DMIC_AI_GET_STREAM:
+			ret = dsp_get_mic_stream(dsp, AUDIO_ROUTE_DMIC_ID, arg);
 			break;
 		case AMIC_AO_SET_STREAM:
 			ret = dsp_set_spk_stream(dsp, arg);
@@ -1665,6 +2064,18 @@ static long dsp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			}
 			ret = dsp_route_ioctl(dsp, AUDIO_ROUTE_SPK_ID, AUDIO_CMD_SET_MUTE, &channel);
 			break;
+		case DMIC_AI_SET_VOLUME:
+			if (get_user(dmic_vol, (int*)arg)){
+				ret = -EFAULT;
+				goto EXIT_IOCTRL;
+			}
+			ret = dsp_route_ioctl(dsp, AUDIO_ROUTE_DMIC_ID, AUDIO_CMD_SET_GAIN, &dmic_vol);
+			break;
+		case DMIC_AI_GET_VOLUME:
+			ret = dsp_route_ioctl(dsp, AUDIO_ROUTE_DMIC_ID, AUDIO_CMD_GET_GAIN, &dmic_vol);
+			if(ret == AUDIO_SUCCESS)
+				ret = put_user(dmic_vol, (int *)arg);
+			break;
 		default:
 			audio_warn_print("SOUDND ERROR:ioctl command %d is not supported\n", cmd);
 			ret = -1;
@@ -1780,6 +2191,8 @@ static int audio_dsp_probe(struct platform_device *pdev)
 	/* The AIC platform device comes from the device tree; its driver binds here */
 	if (aic_enable)
 		platform_driver_register(&audio_aic_driver);
+	if (dmic_enable)
+		audio_dmic_register();
 
 	if (!dspdev->routes[AUDIO_ROUTE_AMIC_ID].pipe &&
 	    !dspdev->routes[AUDIO_ROUTE_SPK_ID].pipe) {
@@ -1814,7 +2227,8 @@ static void audio_dsp_remove(struct platform_device *pdev)
 
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
-
+	if (dmic_enable)
+		audio_dmic_unregister();
 	hrtimer_cancel(&dspdev->hr_timer);
 	cancel_work_sync(&dspdev->workqueue);
 	proc_remove(dspdev->proc);
@@ -1839,6 +2253,7 @@ static int __init audio_dsp_init(void)
 
 	mic_debug.start_jiffies = jiffies;
 	spk_debug.start_jiffies = jiffies;
+	dmic_debug.start_jiffies = jiffies;
 
 	audio_dsp_pdev = platform_device_alloc("jz-dsp", PLATFORM_DEVID_NONE);
 	if (!audio_dsp_pdev)

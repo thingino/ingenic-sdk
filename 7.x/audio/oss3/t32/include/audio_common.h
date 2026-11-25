@@ -27,6 +27,7 @@ enum audio_state {
 
 enum auido_route_index {
 	AUDIO_ROUTE_AMIC_ID,
+	AUDIO_ROUTE_DMIC_ID,
 	AUDIO_ROUTE_SPK_ID,
 	AUDIO_ROUTE_AEC_ID,
 	AUDIO_ROUTE_MAX_ID,

@@ -38,10 +38,18 @@ struct audio_parameter {
 	unsigned short format;
 	unsigned short channel;
 };
+#define DMIC_AI_SET_PARAM			_SIOR ('P', 115, struct audio_parameter)
+#define DMIC_AI_GET_PARAM			_SIOR ('P', 114, struct audio_parameter)
 #define AMIC_AI_SET_PARAM			_SIOR ('P', 113, struct audio_parameter)
 #define AMIC_AI_GET_PARAM			_SIOR ('P', 112, struct audio_parameter)
 #define AMIC_AO_SET_PARAM			_SIOR ('P', 111, struct audio_parameter)
 #define AMIC_AO_GET_PARAM			_SIOR ('P', 110, struct audio_parameter)
+#define DMIC_AI_DISABLE_STREAM		_SIOR ('P', 107, int)
+#define DMIC_AI_ENABLE_STREAM		_SIOR ('P', 106, int)
+#define DMIC_AI_GET_STREAM			_SIOR ('P', 105, struct audio_input_stream)
+#define DMIC_ENABLE_AEC        		_SIOR ('P', 104, int)
+#define DMIC_DISABLE_AEC        	_SIOR ('P', 103, int)
+#define DMIC_SET_AI_VOLUME        	_SIOR ('P', 102, int)
 #define AMIC_AO_SYNC_STREAM        	_SIOR ('P', 101, int)
 #define AMIC_AO_CLEAR_STREAM        _SIOR ('P', 100, int)
 #define AMIC_AO_SET_STREAM        	_SIOR ('P', 99, struct audio_ouput_stream)
@@ -56,10 +64,12 @@ struct audio_parameter {
 #define AMIC_AI_SET_GAIN			_SIOR ('P', 90, struct volume)
 #define AMIC_SPK_SET_VOLUME			_SIOR ('P', 89, struct volume)
 #define AMIC_SPK_SET_GAIN			_SIOR ('P', 88, struct volume)
+#define DMIC_AI_SET_VOLUME			_SIOR ('P', 87, int)
 #define AMIC_AI_GET_VOLUME			_SIOR ('P', 86, struct volume)
 #define AMIC_AI_GET_GAIN			_SIOR ('P', 85, struct volume)
 #define AMIC_SPK_GET_VOLUME			_SIOR ('P', 84, struct volume)
 #define AMIC_SPK_GET_GAIN			_SIOR ('P', 83, struct volume)
+#define DMIC_AI_GET_VOLUME			_SIOR ('P', 82, int)
 #define AMIC_AI_HPF_ENABLE	    	_SIOR ('P', 79, int)
 #define AMIC_AI_SET_MUTE	    	_SIOR ('P', 78, int)
 #define AMIC_SPK_SET_MUTE	    	_SIOR ('P', 77, int)
@@ -113,6 +123,7 @@ struct audio_dsp_device {
 
 	struct audio_route routes[AUDIO_ROUTE_MAX_ID];
 	bool amic_aec;
+	bool dmic_aec;
 	/* debug parameters */
 	struct proc_dir_entry *proc;
 	void *priv;
