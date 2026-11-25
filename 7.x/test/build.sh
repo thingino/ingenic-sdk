@@ -11,7 +11,7 @@
 #            imp-enc.c (T21 T23), t31/imp-enc.c (T31): capture and encode
 #            t32/imp-enc.c, t32/imp-osd.c (T32, T33): as the T31 ones with the 2.x API;
 #            build them with the SoC's include directory (SENSOR=gc5613 I2CADDR=0x31 on the T33)
-#            imp-ai.c imp-ao.c (all): audio capture and playback;
+#            imp-ai.c imp-ao.c (all): audio capture and playback; imp-dmic.c (T32): DMIC capture;
 #            pcmtone.py, wavtone.py, phasejump.py analyse the result
 # The T10, T20 and T30 vendor libraries were linked against uClibc 0.9.33:
 # on a uClibc-ng root they link libctype_shim.so (built here from
