@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 # Out-of-tree modules for mainline Linux 7.x on the T10, T20, T21, T23, T30,
-# T31, T32, T33 and T41 (see README.md). Included from the top-level Kbuild when
+# T31, T32, T33, T40 and T41 (see README.md). Included from the top-level Kbuild when
 # KERNEL_VERSION=7.x.
 #
 # Each component is a directory with its own Kbuild, descended into from this
@@ -24,8 +24,8 @@
 #   CONFIG_INGENIC_LOGGER  android_logger.ko, /dev/log_* for libimp
 
 soc := $(SOC_FAMILY)
-ifeq ($(filter t10 t20 t21 t23 t30 t31 t32 t33 t41 a1,$(soc)),)
-    $(error ingenic-sdk 7.x: SOC_FAMILY=$(soc) is not supported (t10 t20 t21 t23 t30 t31 t32 t33 t41 a1))
+ifeq ($(filter t10 t20 t21 t23 t30 t31 t32 t33 t40 t41 a1,$(soc)),)
+    $(error ingenic-sdk 7.x: SOC_FAMILY=$(soc) is not supported (t10 t20 t21 t23 t30 t31 t32 t33 t40 t41 a1))
 endif
 
 # The T10 runs the T20 ISP, VPU and sensor sources, built under its own names.
@@ -33,15 +33,16 @@ src_soc := $(if $(filter t10,$(soc)),t20,$(soc))
 is_t31  := $(if $(filter t31,$(soc)),y)
 is_t32  := $(if $(filter t32,$(soc)),y)
 is_t33  := $(if $(filter t33,$(soc)),y)
+is_t40  := $(if $(filter t40,$(soc)),y)
 is_t41  := $(if $(filter t41,$(soc)),y)
 is_a1   := $(if $(filter a1,$(soc)),y)
 
 CONFIG_INGENIC_ISP           ?= $(if $(is_a1),n,y)
 CONFIG_INGENIC_SENSOR        ?= $(if $(is_a1),n,y)
-CONFIG_INGENIC_VPU           ?= $(if $(is_t31)$(is_t41),n,y)
-CONFIG_INGENIC_AVPU          ?= $(if $(is_t31)$(is_t41),y,n)
-CONFIG_INGENIC_IPU           ?= $(if $(is_t41),n,y)
-CONFIG_INGENIC_AUDIO         ?= $(if $(is_a1),n,y)
+CONFIG_INGENIC_VPU           ?= $(if $(is_t31)$(is_t40)$(is_t41),n,y)
+CONFIG_INGENIC_AVPU          ?= $(if $(is_t31)$(is_t40)$(is_t41),y,n)
+CONFIG_INGENIC_IPU           ?= $(if $(is_t40)$(is_t41),n,y)
+CONFIG_INGENIC_AUDIO         ?= $(if $(is_t40)$(is_a1),n,y)
 CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31 t32 t33 t41,$(soc)),oss3,oss2)
 CONFIG_INGENIC_AIP           ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_VO            ?= $(if $(is_a1),y,n)
