@@ -66,6 +66,14 @@ module_param(agc_noise, int, S_IRUGO);
 MODULE_PARM_DESC(agc_noise, "agc noise enable");
 
 
+static int mic_keep_ref = 1;
+module_param(mic_keep_ref, int, S_IRUGO);
+MODULE_PARM_DESC(mic_keep_ref, "keep the ADC reference powered when a capture ends (0 = vendor behaviour)");
+
+static int mic_preheat = 1;
+module_param(mic_preheat, int, S_IRUGO);
+MODULE_PARM_DESC(mic_preheat, "power the mic bias and ADC reference at codec init instead of at the first capture (0 = vendor behaviour)");
+
 static struct snd_codec_data codec_data = {
 	.codec_sys_clk = 0,
 	.codec_dmic_clk = 0,
@@ -140,6 +148,29 @@ int codec_reg_set(unsigned int reg, int start, int end, int val)
 
 	return ret;
 }
+
+#if defined(CONFIG_SOC_T30) || defined(CONFIG_SOC_T21)
+/*
+ * The mic bias and the ADC reference ramp slowly (seconds) on their
+ * external capacitors; whatever is sampled while they ramp has a decaying DC
+ * offset.
+ */
+static void codec_mic_bias_ref_on(void)
+{
+	codec_reg_set(TS_CODEC_CAACR_21, 7, 7, 1);
+	msleep(10);
+	codec_reg_set(TS_CODEC_CAACR_21, 6, 6, 1);
+	msleep(10);
+	/* set MIC Bias is 1.6 * vcc */
+	codec_reg_set(TS_CODEC_CAACR_21, 0, 2, 7);
+	msleep(10);
+	/* enable ref voltage for ADC */
+	codec_reg_set(TS_CODEC_CAMPCR_24, 7, 7, 1);
+	msleep(10);
+	codec_reg_set(TS_CODEC_CAACR_21, 4, 4, 1);
+	msleep(10);
+}
+#endif
 
 int init_codec(void)
 {
@@ -216,6 +247,11 @@ int init_codec(void)
 	codec_reg_set(TS_CODEC_CCR_28, 0, 6, 0x0);
 #endif
 	msleep(20);
+
+#if defined(CONFIG_SOC_T30) || defined(CONFIG_SOC_T21)
+	if (mic_preheat)
+		codec_mic_bias_ref_on();
+#endif
 
 	return 0;
 }
@@ -297,18 +333,7 @@ static int codec_set_buildin_mic(void)
 	msleep(10);
 
 	/* set record volume */
-	codec_reg_set(TS_CODEC_CAACR_21, 7, 7, 1);
-	msleep(10);
-	codec_reg_set(TS_CODEC_CAACR_21, 6, 6, 1);
-	msleep(10);
-	/* set MIC Bias is 1.6 * vcc */
-	codec_reg_set(TS_CODEC_CAACR_21, 0, 2, 7);
-	msleep(10);
-	/* enable ref voltage for ADC */
-	codec_reg_set(TS_CODEC_CAMPCR_24, 7, 7, 1);
-	msleep(10);
-	codec_reg_set(TS_CODEC_CAACR_21, 4, 4, 1);
-	msleep(10);
+	codec_mic_bias_ref_on();
 	/* enable ALC mode */
 	codec_reg_set(TS_CODEC_CMICCR_22, 0, 0, 1);
 	msleep(10);
@@ -613,7 +638,8 @@ static int codec_turn_off(int mode)
 	if (mode & CODEC_RMODE) {
 		/*close record*/
 #ifndef CONFIG_SOC_T31
-		codec_reg_set(TS_CODEC_CAMPCR_24, 5, 7, 0x0);
+		/* bit 7 is the ADC reference */
+		codec_reg_set(TS_CODEC_CAMPCR_24, 5, mic_keep_ref ? 6 : 7, 0x0);
 #else
 		if(alc_mode) {
 			codec_reg_set(TS_CODEC_CMICCR_23, 4, 4, 0);
