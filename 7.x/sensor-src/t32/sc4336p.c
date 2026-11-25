@@ -1789,9 +1789,18 @@ err_get_mclk:
 static int sc4336p_detect(struct tx_isp_subdev *sd, unsigned int *ident)
 {
 	unsigned char v;
-	int ret;
+	int ret, try;
 
-	ret = sc4336p_read(sd, 0x3107, &v);
+	/*
+	 * MCLK was enabled microseconds ago and without a reset or power pin
+	 * nothing else has waited for the sensor: the first read can be NACKed.
+	 */
+	for (try = 0; try < 5; try++) {
+		ret = sc4336p_read(sd, 0x3107, &v);
+		if (ret >= 0)
+			break;
+		private_msleep(2);
+	}
 	pr_debug("-----%s: %d ret = %d, v = 0x%02x\n", __func__, __LINE__, ret, v);
 	if (ret < 0)
 		return ret;
