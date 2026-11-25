@@ -1011,7 +1011,7 @@ err_cmd:
 	return ret;
 }
 
-long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+static long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int ret = 0;
 	struct ipu_param iparam;
@@ -1089,7 +1089,7 @@ long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	return ret;
 }
 
-int ipu_open(struct inode *inode, struct file *filp)
+static int ipu_open(struct inode *inode, struct file *filp)
 {
 	int ret = 0;
 
