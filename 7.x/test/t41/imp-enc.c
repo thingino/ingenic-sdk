@@ -176,7 +176,8 @@ int main(int argc, char **argv)
 	si.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
 	snprintf(si.i2c.type, sizeof(si.i2c.type), "%s", sensor);
 	si.i2c.addr = i2caddr;
-	si.rst_gpio = si.pwdn_gpio = si.power_gpio = -1;
+	si.rst_gpio = getenv("IMP_RST") ? atoi(getenv("IMP_RST")) : -1;
+	si.pwdn_gpio = si.power_gpio = -1;
 	si.video_interface = IMPISP_SENSOR_VI_MIPI_CSI0;
 	si.mclk = IMPISP_SENSOR_MCLK0;
 

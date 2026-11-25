@@ -15,7 +15,7 @@
  * T21/T23 encoder attributes (profile -1 and a stream buffer size).
  * IMP_SENSOR, IMP_ADDR pick the sensor; IMP_W and IMP_H its size when the
  * proc files do not say; SUB_W and SUB_H the second channel's size
- * (default 640x360).
+ * (default 640x360). IMP_RST is the sensor reset gpio (-1: none).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -160,7 +160,8 @@ int main(int argc, char **argv)
 	si.i2c.addr = envi("IMP_ADDR", 0x40);
 
 #ifdef IMP_API2
-	si.rst_gpio = si.pwdn_gpio = si.power_gpio = -1;
+	si.rst_gpio = envi("IMP_RST", -1);
+	si.pwdn_gpio = si.power_gpio = -1;
 #ifndef IMP_API_T41
 	si.switch_gpio = -1;
 	si.fps.num = 25;
