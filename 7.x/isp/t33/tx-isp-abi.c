@@ -605,6 +605,9 @@ static int priv_clk_set_rate(struct clk *clk, unsigned long rate)
 #define T33_CLIENT44_ADAPTER	24	/* struct i2c_adapter * */
 #define T33_CLIENT44_DEV_DRIVER	88	/* struct device_driver * */
 
+/* stands in for the driver of a client no sensor module bound to */
+static struct device_driver t33_no_driver;
+
 struct t33_i2c_twin {
 	u8 client44[T33_CLIENT44_SIZE] __aligned(4);
 	struct i2c_client *real;
@@ -665,7 +668,15 @@ static struct i2c_client *priv_i2c_new_device(struct i2c_adapter *adap,
 	memcpy(tw->client44 + T33_CLIENT44_NAME, real->name, I2C_NAME_SIZE);
 	BLOB(tw->client44, T33_CLIENT44_ADAPTER, struct i2c_adapter *) = real->adapter;
 	/* i2c_new_client_device() probes synchronously, so the driver is bound by now */
-	BLOB(tw->client44, T33_CLIENT44_DEV_DRIVER, void *) = real->dev.driver;
+	/*
+	 * The firmware reads client->dev.driver->owner without a NULL check, so
+	 * a sensor nobody drives (no module for that name) gets a driver stub:
+	 * it then finds no client data, unregisters the client and fails.
+	 */
+	if (!real->dev.driver)
+		pr_err("t33-isp: no sensor driver for %s at 0x%02x\n", real->name, real->addr);
+	BLOB(tw->client44, T33_CLIENT44_DEV_DRIVER, void *) =
+		real->dev.driver ? (void *)real->dev.driver : (void *)&t33_no_driver;
 
 	mutex_lock(&t33_twin_lock);
 	for (i = 0; i < T33_MAX_TWINS; i++) {
