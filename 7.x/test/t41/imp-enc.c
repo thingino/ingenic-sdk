@@ -8,10 +8,14 @@
  * The sensor is gc4023 at 0x29 (T41NQ), override with SENSOR and I2CADDR,
  * NRVB sets the main channel buffer count (a 22 MiB rmem fits one 2560x1440).
  * IMP_RST, IMP_BUS and IMP_MCLK (T41, T40) are the sensor reset gpio, its i2c adapter and its MCLK source.
- * CODEC=h265 selects H.265 for the two video channels.
+ * CODEC=h265 selects H.265 for the two video channels. HOLD=<s> keeps the frame sources enabled for s
+ * seconds after the streams and snapshots, for register dumps of a running pipeline. RAW=1 also writes one
+ * frame of each frame source, before the encoder, as <outdir>/raw-N.nv12; while holding, a file /tmp/pg-K makes it
+ * capture both channels again as raw-N-pgK.nv12.
  * Writes <outdir>/stream-0.h264, stream-1.h264, snap-0-N.jpg, snap-1-N.jpg.
  */
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -104,6 +108,34 @@ static void *video_thread(void *arg)
 	IMP_Encoder_StopRecvPic(j->chn);
 	close(fd);
 	return NULL;
+}
+
+static int raw_frame(int chn, int w, int h, int tag)
+{
+	IMPFrameInfo info;
+	char path[128];
+	size_t size = (size_t)w * h * 3 / 2;
+	void *buf = malloc(size);
+	int fd, r;
+
+	if (!buf)
+		return -1;
+	memset(&info, 0, sizeof(info));
+	r = IMP_FrameSource_SnapFrame(chn, PIX_FMT_NV12, w, h, buf, &info);
+	if (tag)
+		snprintf(path, sizeof(path), "%s/raw-%d-pg%d.nv12", outdir, chn, tag);
+	else
+		snprintf(path, sizeof(path), "%s/raw-%d.nv12", outdir, chn);
+	printf("raw %s: SnapFrame = %d, %dx%d NV12 %zu bytes\n", path, r, w, h, size);
+	if (r >= 0) {
+		fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+		if (fd < 0 || write(fd, buf, size) != (ssize_t)size)
+			printf("raw write failed: %s\n", strerror(errno));
+		if (fd >= 0)
+			close(fd);
+	}
+	free(buf);
+	return r;
 }
 
 static int snap(int chn, int n, int grp)
@@ -229,9 +261,36 @@ int main(int argc, char **argv)
 	snap(4, 0, 0);
 	snap(5, 0, 1);
 	snap(4, 1, 0);
+	if (getenv("RAW")) {
+		raw_frame(1, sw, sh, 0);
+		raw_frame(0, w, h, 0);
+	}
 	for (i = 0; i < 2; i++)
 		pthread_join(tid[i], NULL);
 
+	if (getenv("HOLD")) {
+		int t, n, hold = atoi(getenv("HOLD"));
+
+		printf("holding the pipeline for %d s\n", hold);
+		fflush(stdout);
+		/* a script marks /tmp/pg-N when it has changed the sensor; capture both channels once per mark */
+		for (t = 0; t < hold; t++) {
+			sleep(1);
+			for (n = 1; n <= 3; n++) {
+				char flag[32];
+
+				snprintf(flag, sizeof(flag), "/tmp/pg-%d", n);
+				if (access(flag, F_OK) == 0) {
+					unlink(flag);
+					sleep(1);
+					raw_frame(1, sw, sh, n);
+					raw_frame(0, w, h, n);
+					printf("pg %d captured\n", n);
+					fflush(stdout);
+				}
+			}
+		}
+	}
 	for (i = 0; i < 2; i++)
 		printf("STREAM %d: %u frames, %u bytes, %u idr, %u poll timeouts\n", i,
 		       job[i].frames, job[i].bytes, job[i].idr, job[i].timeouts);
