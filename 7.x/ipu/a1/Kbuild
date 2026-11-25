@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: GPL-2.0
+# ipu-a1.ko: the A1 IPU firmware of vendor SDK 1.7.0 (built for the 4.4.94
+# kernel) plus the adapter that lets it run on Linux 7.x.
+
+ccflags-y += -Wno-missing-prototypes
+
+ipu-a1-objs := ipu_a1_main.o ipu-fw.o
+obj-m += ipu-a1.o
+
+IPU_FW := sdk/libipu-firmware-1.7.0.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x go to
+# the translators in ipu_a1_main.c. ipu_start_job is the fb module's entry point.
+IPU_REDEF := \
+	--redefine-sym printk=_printk \
+	--redefine-sym dev_err=dev_err_a1 \
+	--redefine-sym PDE_DATA=pde_data_a1 \
+	--redefine-sym warn_slowpath_null=warn_slowpath_null_a1 \
+	--redefine-sym dma_alloc_from_coherent=dma_alloc_from_coherent_a1 \
+	--redefine-sym dma_release_from_coherent=dma_release_from_coherent_a1 \
+	--redefine-sym mips_dma_map_ops=mips_dma_map_ops_a1 \
+	--redefine-sym __dma_request_channel=dma_request_channel_a1 \
+	--globalize-symbol=ipu_start_job
+
+# 4.4's 8-byte __ksymtab entries and their strings: ipu_a1_main.c exports the one
+# symbol in the native format.
+IPU_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings
+
+# The remove callback sits in .exit.text but is referenced from the firmware's
+# .data, which modpost rejects; as plain text it is never discarded.
+IPU_REDEF += --rename-section .exit.text=.text.a1_exit \
+	     --rename-section .rel.exit.text=.rel.text.a1_exit
+
+quiet_cmd_ipufw = FWFIX   $@
+      cmd_ipufw = $(OBJCOPY) $(IPU_REDEF) $(IPU_STRIP) $< $@
+
+$(obj)/ipu-fw.o: $(src)/$(IPU_FW) FORCE
+	$(call if_changed,ipufw)
+
+targets += ipu-fw.o

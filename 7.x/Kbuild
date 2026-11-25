@@ -63,7 +63,7 @@ ifeq ($(CONFIG_INGENIC_AVPU),y)
 endif
 
 ifeq ($(CONFIG_INGENIC_IPU),y)
-    obj-m += 7.x/ipu/$(if $(is_t32)$(is_t33),t32/,)
+    obj-m += 7.x/ipu/$(if $(is_t32)$(is_t33),t32/,$(if $(is_a1),a1/,))
 endif
 
 ifeq ($(CONFIG_INGENIC_AUDIO),y)
