@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: GPL-2.0
+# vo.ko: the A1 video output firmware of vendor SDK 1.7.0 (built for the 4.4.94
+# kernel) plus the adapter that lets it run on Linux 7.x. The module keeps the
+# vendor's name: libimp's init scripts load "vo".
+ccflags-y += -Wno-missing-prototypes -Wno-missing-declarations -Wno-unused-function
+
+vo-objs := vo_a1_main.o vo-fw.o
+obj-m += vo.o
+
+VO_FW := sdk/libvde-firmware-1.7.0.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x go to
+# the translators in a1abi.h and vo_a1_main.c.
+VO_REDEF := \
+	--redefine-sym printk=_printk \
+	--redefine-sym PDE_DATA=pde_data_a1 \
+	--redefine-sym proc_create_data=proc_create_data_a1 \
+	--redefine-sym strlcpy=strlcpy_a1 \
+	--redefine-sym kernel_read=kernel_read_a1 \
+	--redefine-sym vfs_read=vfs_read_a1 \
+	--redefine-sym i2c_transfer=i2c_transfer_a1 \
+	--redefine-sym __div64_32=div64_32_a1
+
+# 4.4's 8-byte __ksymtab entries and their strings: vo_a1_main.c exports the
+# symbols in the native format.
+VO_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings
+
+quiet_cmd_vofw = FWFIX   $@
+      cmd_vofw = $(OBJCOPY) $(VO_REDEF) $(VO_STRIP) $< $@
+
+$(obj)/vo-fw.o: $(src)/$(VO_FW) FORCE
+	$(call if_changed,vofw)
+
+targets += vo-fw.o

@@ -24,6 +24,7 @@
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
+#include <linux/namei.h>
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
 #include <linux/slab.h>
@@ -568,13 +569,21 @@ struct a1_proc {
 };
 
 static struct a1_proc *a1_procs;
-static struct proc_dir_entry *a1_jz;
 
+/* /proc/jz/<s>: the root is shared by the A1 modules, whichever loads first makes it */
 struct proc_dir_entry *private_jz_proc_mkdir(char *s)
 {
-	if (!a1_jz)
-		a1_jz = proc_mkdir("jz", NULL);
-	return a1_jz ? proc_mkdir(s, a1_jz) : NULL;
+	char path[64];
+	struct path p;
+
+	if (kern_path("/proc/jz", 0, &p)) {
+		if (!proc_mkdir("jz", NULL))
+			return NULL;
+	} else {
+		path_put(&p);
+	}
+	snprintf(path, sizeof(path), "jz/%s", s);
+	return proc_mkdir(path, NULL);
 }
 
 struct proc_dir_entry *private_proc_create_data(const char *name, umode_t mode,

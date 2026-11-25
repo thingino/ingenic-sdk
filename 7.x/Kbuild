@@ -16,6 +16,8 @@
 #   CONFIG_INGENIC_AVPU    avpu.ko (t31 and t41 only)
 #   CONFIG_INGENIC_IPU     ipu-<soc>.ko (ipu.ko on t31), libimp OSD
 #   CONFIG_INGENIC_AUDIO   audio.ko, oss2 or oss3 (CONFIG_INGENIC_AUDIO_VARIANT)
+#   CONFIG_INGENIC_FB      fb.ko (a1 only)
+#   CONFIG_INGENIC_VO      vo.ko (a1 only)
 #   CONFIG_INGENIC_AIP     ingenic-aip.ko (a1 only)
 #   CONFIG_INGENIC_RMEM    rmem.ko, /dev/rmem for libimp
 #   CONFIG_INGENIC_LOGGER  android_logger.ko, /dev/log_* for libimp
@@ -41,6 +43,8 @@ CONFIG_INGENIC_IPU           ?= $(if $(is_t41),n,y)
 CONFIG_INGENIC_AUDIO         ?= $(if $(is_a1),n,y)
 CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31 t32 t33 t41,$(soc)),oss3,oss2)
 CONFIG_INGENIC_AIP           ?= $(if $(is_a1),y,n)
+CONFIG_INGENIC_VO            ?= $(if $(is_a1),y,n)
+CONFIG_INGENIC_FB            ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_RMEM          ?= y
 CONFIG_INGENIC_LOGGER        ?= y
 
@@ -72,6 +76,14 @@ ifeq ($(CONFIG_INGENIC_AUDIO),y)
     else
         obj-m += 7.x/audio/oss3/$(soc)/
     endif
+endif
+
+ifeq ($(CONFIG_INGENIC_FB),y)
+    obj-m += 7.x/fb/a1/
+endif
+
+ifeq ($(CONFIG_INGENIC_VO),y)
+    obj-m += 7.x/vo/a1/
 endif
 
 ifeq ($(CONFIG_INGENIC_AIP),y)

@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-2.0
+# fb.ko: the A1 framebuffer firmware of vendor SDK 1.7.0 (built for the 4.4.94
+# kernel) plus the adapter that lets it run on Linux 7.x. The module keeps the
+# vendor's name: libimp's init scripts load "fb".
+ccflags-y += -Wno-missing-prototypes -Wno-missing-declarations -Wno-unused-function
+
+fb-objs := fb_a1_main.o fb-fw.o
+obj-m += fb.o
+
+FB_FW := sdk/libfb-firmware-1.7.0.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x go to
+# the translators in a1abi.h and fb_a1_main.c.
+FB_REDEF := \
+	--redefine-sym printk=_printk \
+	--redefine-sym PDE_DATA=pde_data_a1 \
+	--redefine-sym proc_create_data=proc_create_data_a1 \
+	--redefine-sym __ioremap=ioremap_a1 \
+	--redefine-sym __iounmap=iounmap_a1 \
+	--redefine-sym remap_pfn_range=remap_pfn_range_a1 \
+	--redefine-sym cancel_work_sync=cancel_work_sync_a1
+
+# 4.4's 8-byte __ksymtab entries and their strings, and the debug info the
+# firmware carries (4.4's type layouts, not this kernel's).
+FB_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings \
+	    -R '.debug*' -R '.rel.debug*'
+
+# The remove and exit callbacks sit in .exit.text but are referenced from the
+# firmware's .data, which modpost rejects; as plain text they are never discarded.
+FB_REDEF += --rename-section .exit.text=.text.a1_exit \
+	    --rename-section .rel.exit.text=.rel.text.a1_exit
+
+quiet_cmd_fbfw = FWFIX   $@
+      cmd_fbfw = $(OBJCOPY) $(FB_REDEF) $(FB_STRIP) $< $@
+
+$(obj)/fb-fw.o: $(src)/$(FB_FW) FORCE
+	$(call if_changed,fbfw)
+
+targets += fb-fw.o
