@@ -55,4 +55,66 @@ static inline int set_sensor_gpio_function(int func_set)
 	return 0;
 }
 
+/*
+ * Sensor info registry hooks (tx-isp-sinfo.c, /proc/jz/sensor). Only sensor
+ * translation units include this header, so the wraps are sensor-only.
+ * SENSOR_I2C_ADDRESS expands at the driver's call site.
+ */
+#include <tx-isp-common.h>
+#include <media/v4l2-device.h>
+
+int tx_isp_sinfo_driver_add(struct i2c_driver *drv, int def_i2c_addr,
+			    struct module *owner);
+void tx_isp_sinfo_driver_del(struct i2c_driver *drv);
+int tx_isp_sinfo_sensor_bind(struct v4l2_subdev *sd, struct module *owner);
+void tx_isp_sinfo_sensor_unbind(struct v4l2_subdev *sd, struct module *owner);
+int tx_isp_sinfo_init(void);
+void tx_isp_sinfo_exit(void);
+
+#ifndef TX_ISP_SINFO_NO_HOOK
+
+static inline void __sinfo_v4l2_subdev_init(struct v4l2_subdev *sd,
+					    struct i2c_client *client,
+					    const struct v4l2_subdev_ops *ops,
+					    struct module *owner)
+{
+	(v4l2_i2c_subdev_init)(sd, client, ops);
+	tx_isp_sinfo_sensor_bind(sd, owner);
+}
+
+static inline void __sinfo_v4l2_unreg_subdev(struct v4l2_subdev *sd,
+					     struct module *owner)
+{
+	tx_isp_sinfo_sensor_unbind(sd, owner);
+	(v4l2_device_unregister_subdev)(sd);
+}
+
+static inline int __sinfo_i2c_add_driver(struct i2c_driver *drv,
+					 int def_i2c_addr, struct module *owner)
+{
+	int ret = i2c_register_driver(owner, drv);
+
+	if (!ret)
+		tx_isp_sinfo_driver_add(drv, def_i2c_addr, owner);
+	return ret;
+}
+
+static inline void __sinfo_i2c_del_driver(struct i2c_driver *drv)
+{
+	tx_isp_sinfo_driver_del(drv);
+	(i2c_del_driver)(drv);
+}
+
+#undef i2c_add_driver
+#define i2c_add_driver(drv) \
+	__sinfo_i2c_add_driver((drv), SENSOR_I2C_ADDRESS, THIS_MODULE)
+#define i2c_del_driver(drv) \
+	__sinfo_i2c_del_driver((drv))
+#define v4l2_i2c_subdev_init(sd, client, ops) \
+	__sinfo_v4l2_subdev_init((sd), (client), (ops), THIS_MODULE)
+#define v4l2_device_unregister_subdev(sd) \
+	__sinfo_v4l2_unreg_subdev((sd), THIS_MODULE)
+
+#endif /* TX_ISP_SINFO_NO_HOOK */
+
 #endif// __TX_SENSOR_COMMON_H__

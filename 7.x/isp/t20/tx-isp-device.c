@@ -11,6 +11,8 @@
 #include <linux/gpio.h>
 
 #include <jz_proc.h>
+#define TX_ISP_SINFO_NO_HOOK
+#include <sensor-common.h>
 #include "tx-isp-device.h"
 #include "tx-isp-interrupt.h"
 #include "tx-isp-debug.h"
@@ -504,11 +506,14 @@ static int __init tx_isp_init(void)
 	ret = platform_driver_register(&tx_isp_glue_driver);
 	if (ret)
 		platform_driver_unregister(&tx_isp_driver);
+	else
+		tx_isp_sinfo_init();
 	return ret;
 }
 
 static void __exit tx_isp_exit(void)
 {
+	tx_isp_sinfo_exit();
 	platform_driver_unregister(&tx_isp_glue_driver);
 	platform_driver_unregister(&tx_isp_driver);
 	jz_proc_cleanup();

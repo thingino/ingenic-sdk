@@ -7,7 +7,7 @@ ccflags-y += -I$(src) -I$(src)/include -I$(src)/compat -I$(src)/../../rmem -DCON
 
 tx-isp-$(SOC_FAMILY)-objs := tx-isp-vic.o tx-isp-videobuf.o tx-isp-video-in.o \
 	tx-isp-frame-channel.o tx-isp-csi.o tx-isp-interrupt.o tx-isp-debug.o \
-	tx-isp-device.o platform.o compat/jz_proc.o compat/blob_shim.o \
+	tx-isp-device.o tx-isp-sinfo.o platform.o compat/jz_proc.o compat/blob_shim.o \
 	apical-isp/tx-isp-core-tuning.o apical-isp/tx-isp-core.o \
 	apical-isp/apical_dynamic_calibrations.o \
 	apical-isp/apical_static_calibrations.o \
