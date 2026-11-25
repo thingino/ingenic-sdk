@@ -1142,14 +1142,67 @@ PRIVV(release_mem_region, (resource_size_t start, resource_size_t n), (start, n)
 PRIV(void __iomem *, ioremap, (phys_addr_t offset, unsigned long size), (offset, size))
 PRIVV(iounmap, (const volatile void __iomem *addr), (addr))
 
+/*
+ * The firmware requests an interrupt before the object its handler reads is
+ * set up and disables it right after the request. A line the hardware still
+ * asserts (IVDC after an unload) fires in between and the handler
+ * dereferences NULL. Request it disabled instead and let the firmware's
+ * first disable_irq() of that line, which would unbalance the count, pass.
+ */
+static DEFINE_SPINLOCK(t32_irq_lock);
+static unsigned int t32_irq_quiet[8];
+
+static bool t32_irq_quiet_take(unsigned int irq, bool take)
+{
+	bool found = false;
+	int i;
+
+	spin_lock(&t32_irq_lock);
+	for (i = 0; i < ARRAY_SIZE(t32_irq_quiet); i++) {
+		if (t32_irq_quiet[i] == irq) {
+			found = true;
+			if (take)
+				t32_irq_quiet[i] = 0;
+			break;
+		}
+	}
+	spin_unlock(&t32_irq_lock);
+	return found;
+}
+
+static void t32_irq_quiet_add(unsigned int irq)
+{
+	int i;
+
+	spin_lock(&t32_irq_lock);
+	for (i = 0; i < ARRAY_SIZE(t32_irq_quiet); i++) {
+		if (!t32_irq_quiet[i]) {
+			t32_irq_quiet[i] = irq;
+			break;
+		}
+	}
+	spin_unlock(&t32_irq_lock);
+}
+
 int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
 				 irq_handler_t thread_fn, unsigned long flags,
 				 const char *name, void *dev)
 {
-	return request_threaded_irq(irq, handler, thread_fn, flags, name, dev);
+	int ret;
+
+	t32_irq_quiet_add(irq);
+	ret = request_threaded_irq(irq, handler, thread_fn, flags | IRQF_NO_AUTOEN, name, dev);
+	if (ret)
+		t32_irq_quiet_take(irq, true);
+	return ret;
 }
 void private_enable_irq(unsigned int irq) { enable_irq(irq); }
-void private_disable_irq(unsigned int irq) { disable_irq(irq); }
+void private_disable_irq(unsigned int irq)
+{
+	if (t32_irq_quiet_take(irq, true))
+		return;
+	disable_irq(irq);
+}
 PRIVV(free_irq, (unsigned int irq, void *dev_id), (irq, dev_id))
 
 void __private_spin_lock_irqsave(spinlock_t *lock, unsigned long *flags)
