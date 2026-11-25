@@ -9,6 +9,7 @@
 #include <linux/module.h>
 #include <linux/mm.h>
 #include <linux/io.h>
+#include <linux/of.h>
 #include <linux/dma-mapping.h>
 #include <asm/pgtable.h>
 #include <linux/soc/ingenic/rmem.h>
@@ -33,6 +34,42 @@ MODULE_PARM_DESC(cached, "map rmem cacheable (the vendor behaviour); default unc
 static bool trace;
 module_param(trace, bool, 0644);
 MODULE_PARM_DESC(trace, "log every flush ioctl");
+
+/*
+ * The T10, T20, T21 and T30 libimps read the low byte of the CPM scratch pad
+ * (CPSPR) as the MXU licence grade and only take their SIMD paths when it is
+ * right. The vendor kernels set it from a module; mainline does not, and
+ * libimp starts after rmem.ko is loaded, so it is written here. CPSPR only
+ * takes writes while CPSPPR holds the unlock value.
+ */
+#define CPM_BASE		0x10000000
+#define CPM_SIZE		0x40
+#define CPM_CPSPR		0x34
+#define CPM_CPSPPR		0x38
+#define CPM_CPSPPR_UNLOCK	0x5a5a
+#define CPM_CPSPR_MXU_GRADE	0x101
+
+static void rmem_set_mxu_grade(void)
+{
+	void __iomem *cpm;
+
+	if (!(of_machine_is_compatible("ingenic,t10") ||
+	      of_machine_is_compatible("ingenic,t20") ||
+	      of_machine_is_compatible("ingenic,t21") ||
+	      of_machine_is_compatible("ingenic,t30")))
+		return;
+
+	cpm = ioremap(CPM_BASE, CPM_SIZE);
+	if (!cpm) {
+		pr_warn("rmem: cannot map the CPM, MXU licence grade not set\n");
+		return;
+	}
+	writel(CPM_CPSPPR_UNLOCK, cpm + CPM_CPSPPR);
+	writel(CPM_CPSPR_MXU_GRADE, cpm + CPM_CPSPR);
+	writel(0, cpm + CPM_CPSPPR);
+	pr_info("rmem: MXU licence grade, CPSPR %#x\n", readl(cpm + CPM_CPSPR));
+	iounmap(cpm);
+}
 
 #define RMEN_MAGIC 'r'
 #define RMEN_CMD_FLUSH_CACHE _IOWR(RMEN_MAGIC, 0, struct rmem_flush_cache_info)
@@ -143,6 +180,7 @@ static int __init rmem_init(void)
 	}
 	pr_info("rmem: %pa + %pa, %s\n", &rmem_base, &rmem_size,
 		cached ? "cached" : "uncached");
+	rmem_set_mxu_grade();
 	return misc_register(&rmem_mdev);
 }
 
