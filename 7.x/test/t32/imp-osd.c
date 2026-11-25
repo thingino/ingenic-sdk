@@ -11,7 +11,7 @@
  * At <update_at> the bars bitmap is replaced (IMP_OSD_UpdateRgnAttrData).
  * Writes <outdir>/stream-0.h264, regions.txt and the bitmaps as raw BGRA.
  *
- * usage: imp-osd <outdir> <frames> [show_at update_at]
+ * usage: imp-osd <outdir> <frames> [show_at update_at [width height]]
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,8 +33,7 @@ extern int IMP_OSD_SetPoolSize(int size);
 #define CHK(call) do { int r_ = (call); printf("%s = %d\n", #call, r_); fflush(stdout); if (r_ < 0) exit(1); } while (0)
 #define TD(call) do { printf("teardown %s\n", #call); fflush(stdout); call; } while (0)
 
-#define W 2560
-#define H 1440
+static int W = 2560, H = 1440;
 #define GRP 0
 
 #define BARS_W 256
@@ -152,6 +151,10 @@ int main(int argc, char **argv)
 	if (argc >= 5) {
 		show_at = atoi(argv[3]);
 		update_at = atoi(argv[4]);
+	}
+	if (argc >= 7) {
+		W = atoi(argv[5]);
+		H = atoi(argv[6]);
 	}
 
 	make_bars(bars, 0);
