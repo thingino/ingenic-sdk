@@ -6,3 +6,6 @@ lib/**/*.txt
 .idea/
 .vscode/
 
+*.ko
+modules.order
+Module.symvers
