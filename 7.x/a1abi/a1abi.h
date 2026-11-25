@@ -225,29 +225,34 @@ struct device_node *private_dev_of_node(struct device *dev)
 	return a1_real_dev(dev)->of_node;
 }
 
+/* a driver whose firmware has 4.4 interrupt numbers builds in a translation */
+#ifndef A1_IRQ_XLATE
+#define A1_IRQ_XLATE(i)	(i)
+#endif
+
 int private_request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
 			const char *name, void *dev)
 {
-	return request_irq(irq, handler, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, dev);
+	return request_irq(A1_IRQ_XLATE(irq), handler, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, dev);
 }
 
 int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
 				 irq_handler_t thread_fn, unsigned long flags,
 				 const char *name, void *dev)
 {
-	return request_threaded_irq(irq, handler, thread_fn,
+	return request_threaded_irq(A1_IRQ_XLATE(irq), handler, thread_fn,
 				    flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT),
 				    name, dev);
 }
 
 void private_enable_irq(unsigned int irq)
 {
-	enable_irq(irq);
+	enable_irq(A1_IRQ_XLATE(irq));
 }
 
 void private_disable_irq(unsigned int irq)
 {
-	disable_irq(irq);
+	disable_irq(A1_IRQ_XLATE(irq));
 }
 
 void private_disable_irq_nosync(unsigned int irq)
@@ -257,7 +262,7 @@ void private_disable_irq_nosync(unsigned int irq)
 
 void private_free_irq(unsigned int irq, void *dev)
 {
-	free_irq(irq, dev);
+	free_irq(A1_IRQ_XLATE(irq), dev);
 }
 
 void private_spin_lock(spinlock_t *l)
@@ -626,25 +631,50 @@ struct a1_misc {
 
 static struct a1_misc *a1_misc_twin;
 
+/*
+ * One 4.4 file stand-in per open file, kept in the real file's private_data:
+ * the firmware stores its per-open state in file->private_data@136 at open
+ * and reads it back in every later call.
+ */
 static int a1_misc_open(struct inode *inode, struct file *file)
 {
-	struct a1_file44 f = { .private_data = a1_misc_twin->blob };
+	struct a1_file44 *f = kzalloc(sizeof(*f), GFP_KERNEL);
+	int ret = 0;
 
-	return a1_misc_twin->blob_open ? a1_misc_twin->blob_open(inode, &f) : 0;
+	if (!f)
+		return -ENOMEM;
+	f->private_data = a1_misc_twin->blob;
+	if (a1_misc_twin->blob_open)
+		ret = a1_misc_twin->blob_open(inode, f);
+	if (ret)
+		kfree(f);
+	else
+		file->private_data = f;
+	return ret;
 }
 
 static int a1_misc_release(struct inode *inode, struct file *file)
 {
-	struct a1_file44 f = { .private_data = a1_misc_twin->blob };
+	struct a1_file44 *f = file->private_data;
+	int ret = 0;
 
-	return a1_misc_twin->blob_release ? a1_misc_twin->blob_release(inode, &f) : 0;
+	if (a1_misc_twin->blob_release)
+		ret = a1_misc_twin->blob_release(inode, f);
+	kfree(f);
+	return ret;
 }
 
 static long a1_misc_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-	struct a1_file44 f = { .private_data = a1_misc_twin->blob };
+	struct thread_info *ti = current_thread_info();
+	long saved = ti->syscall;
+	long ret;
 
-	return a1_misc_twin->blob_ioctl(&f, cmd, arg);
+	/* the firmware's inlined access_ok() reads 4.4's addr_limit here */
+	ti->syscall = 0;
+	ret = a1_misc_twin->blob_ioctl(file->private_data, cmd, arg);
+	ti->syscall = saved;
+	return ret;
 }
 
 /* 4.4's miscdevice: minor (0), name (4), fops (8) */

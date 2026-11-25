@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: GPL-2.0
+# vdec.ko: the A1 VC8000D decoder firmware of vendor SDK 1.7.0 (built for the
+# 4.4.94 kernel) plus the adapter that lets it run on Linux 7.x. The module
+# keeps the vendor's name: libimp's init scripts load "vdec".
+ccflags-y += -Wno-missing-prototypes -Wno-missing-declarations -Wno-unused-function
+
+vdec-objs := vdec_a1_main.o vdec-fw.o
+obj-m += vdec.o
+
+VDEC_FW := sdk/libvdec-firmware-1.7.0.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x go to
+# the translators in a1abi.h and vdec_a1_main.c; irq is its interrupt array.
+VDEC_REDEF := \
+	--redefine-sym printk=_printk \
+	--redefine-sym kmalloc_caches=a1_kmalloc_caches \
+	--redefine-sym kmem_cache_alloc=a1_kmem_cache_alloc \
+	--redefine-sym dma_alloc_from_coherent=dma_alloc_from_coherent_a1 \
+	--redefine-sym dma_release_from_coherent=dma_release_from_coherent_a1 \
+	--redefine-sym mips_dma_map_ops=mips_dma_map_ops_a1 \
+	--redefine-sym warn_slowpath_null=warn_slowpath_null_a1 \
+	--redefine-sym __mutex_init=__mutex_init_a1 \
+	--redefine-sym mutex_lock=mutex_lock_a1 \
+	--redefine-sym mutex_unlock=mutex_unlock_a1 \
+	--redefine-sym ioread32=ioread32_a1 \
+	--redefine-sym iowrite32=iowrite32_a1 \
+	--redefine-sym __ioremap=ioremap_a1 \
+	--redefine-sym __iounmap=iounmap_a1 \
+	--redefine-sym vmalloc=vmalloc_a1 \
+	--redefine-sym _raw_spin_lock=raw_spin_lock_a1 \
+	--redefine-sym _raw_spin_unlock=raw_spin_unlock_a1 \
+	--redefine-sym __copy_user=__raw_copy_to_user
+# (__copy_user is only used by MMUIoctl, which is replaced below)
+
+# 4.4's __ksymtab, module parameters and their info: the module has none of
+# its own on 7.x.
+VDEC_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings \
+	      -R .modinfo -R __param -R .rel__param
+
+# The exit callbacks sit in .exit.text but are referenced from the firmware's
+# .data, which modpost rejects; as plain text they are never discarded.
+VDEC_REDEF += --rename-section .exit.text=.text.a1_exit \
+	      --rename-section .rel.exit.text=.rel.text.a1_exit
+
+# The functions that read 4.4 task, mm, page and page-table structures are
+# replaced by C in vdec_a1_main.c: tools/retarget.py routes the firmware's
+# calls to them, then its static MMU helpers and data that those replacements
+# share are renamed and made global.
+VDEC_REPLACE := GetPhysicalAddress=GetPhysicalAddress_a1 MMUIoctl \
+		MMUKernelMemNodeMap MMUKernelMemNodeUnmap
+
+VDEC_SHARE := \
+	--redefine-sym SplitFreeNode=vdec_SplitFreeNode \
+	--redefine-sym SMCreateNode.isra.0=vdec_SMCreateNode \
+	--redefine-sym InsertNode.part.5=vdec_InsertNode \
+	--redefine-sym DeleteNode=vdec_DeleteNode \
+	--redefine-sym RemoveNode=vdec_RemoveNode \
+	--redefine-sym SMRemoveNode=vdec_SMRemoveNode \
+	--redefine-sym g_mmu=vdec_g_mmu
+
+VDEC_GLOBAL := $(foreach s,SplitFreeNode SMCreateNode InsertNode DeleteNode \
+		RemoveNode SMRemoveNode g_mmu,--globalize-symbol=vdec_$(s))
+
+quiet_cmd_vdecfw = FWFIX   $@
+      cmd_vdecfw = python3 $(src)/tools/retarget.py $< $@.rt $(VDEC_REPLACE) && \
+		   $(OBJCOPY) $(VDEC_SHARE) $@.rt $@.rn && \
+		   $(OBJCOPY) $(VDEC_GLOBAL) $(VDEC_REDEF) $(VDEC_STRIP) $@.rn $@ && \
+		   rm -f $@.rt $@.rn
+
+$(obj)/vdec-fw.o: $(src)/$(VDEC_FW) $(src)/tools/retarget.py FORCE
+	$(call if_changed,vdecfw)
+
+targets += vdec-fw.o
