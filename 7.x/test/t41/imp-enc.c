@@ -7,6 +7,7 @@
  * usage: imp-enc <outdir> <frames> [width height [subw subh]]
  * The sensor is gc4023 at 0x29 (T41NQ), override with SENSOR and I2CADDR,
  * NRVB sets the main channel buffer count (a 22 MiB rmem fits one 2560x1440).
+ * IMP_RST and IMP_BUS (T41, T40) are the sensor reset gpio and its i2c adapter.
  * CODEC=h265 selects H.265 for the two video channels.
  * Writes <outdir>/stream-0.h264, stream-1.h264, snap-0-N.jpg, snap-1-N.jpg.
  */
@@ -176,6 +177,8 @@ int main(int argc, char **argv)
 	si.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
 	snprintf(si.i2c.type, sizeof(si.i2c.type), "%s", sensor);
 	si.i2c.addr = i2caddr;
+	if (getenv("IMP_BUS"))
+		si.i2c.i2c_adapter_id = atoi(getenv("IMP_BUS"));
 	si.rst_gpio = getenv("IMP_RST") ? atoi(getenv("IMP_RST")) : -1;
 	si.pwdn_gpio = si.power_gpio = -1;
 	si.video_interface = IMPISP_SENSOR_VI_MIPI_CSI0;
