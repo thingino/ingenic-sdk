@@ -17,6 +17,6 @@ tx-isp-t30-objs := platform.o compat/jz_proc.o compat/blob_shim.o compat/ifaces.
 	apical-isp/system_chardev.o \
 	txx-funcs.o tx-isp-debug.o tx-isp-videobuf.o tx-isp-interrupt.o \
 	tx-isp-ncu.o tx-isp-ldc.o tx-isp-mscaler.o tx-isp-frame-channel.o \
-	tx-isp-device.o apical-isp/libapical_isp.a
+	tx-isp-device.o tx-isp-sinfo.o apical-isp/libapical_isp.a
 
 obj-m += tx-isp-t30.o

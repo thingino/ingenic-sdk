@@ -20,6 +20,8 @@
 #include <linux/gpio.h>
 
 #include <tx-isp-common.h>
+#define TX_ISP_SINFO_NO_HOOK
+#include <sensor-common.h>
 #include "tx-isp-interrupt.h"
 #include "tx-isp-debug.h"
 #include "videoin/tx-isp-vic.h"
@@ -1417,12 +1419,15 @@ int tx_isp_start(void)
 	ret = private_platform_driver_register(&tx_isp_driver);
 	if(ret){
 		private_platform_device_unregister(&tx_isp_platform_device);
+		return ret;
 	}
-	return ret;
+	tx_isp_sinfo_init();
+	return 0;
 }
 
 void tx_isp_stop(void)
 {
+	tx_isp_sinfo_exit();
 	private_platform_driver_unregister(&tx_isp_driver);
 	private_platform_device_unregister(&tx_isp_platform_device);
 }
