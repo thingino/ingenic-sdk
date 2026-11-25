@@ -31,7 +31,8 @@
 #include <asm/pgtable-bits.h>
 #include <asm/r4kcache.h>
 
-#ifdef CONFIG_SMP
+/* the T41's two cores share the coherence the kernel's own dma sync relies on */
+#if defined(CONFIG_SMP) && !defined(CONFIG_INGENIC_XBURST2_SMP)
 #error "rmem_cache.h runs cache ops on the local CPU only"
 #endif
 
