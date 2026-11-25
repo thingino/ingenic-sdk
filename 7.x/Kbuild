@@ -33,7 +33,7 @@ CONFIG_INGENIC_ISP           ?= y
 CONFIG_INGENIC_SENSOR        ?= y
 CONFIG_INGENIC_VPU           ?= $(if $(is_t31),n,y)
 CONFIG_INGENIC_AVPU          ?= $(if $(is_t31),y,n)
-CONFIG_INGENIC_IPU           ?= $(if $(is_t32),n,y)
+CONFIG_INGENIC_IPU           ?= y
 CONFIG_INGENIC_AUDIO         ?= $(if $(is_t32),n,y)
 CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31,$(soc)),oss3,oss2)
 CONFIG_INGENIC_RMEM          ?= y
@@ -58,7 +58,7 @@ ifeq ($(CONFIG_INGENIC_AVPU),y)
 endif
 
 ifeq ($(CONFIG_INGENIC_IPU),y)
-    obj-m += 7.x/ipu/
+    obj-m += 7.x/ipu/$(if $(is_t32),t32/,)
 endif
 
 ifeq ($(CONFIG_INGENIC_AUDIO),y)

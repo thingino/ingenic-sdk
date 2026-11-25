@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# ipu-t32.ko: /dev/ipu (libimp OSD) with the T32 IPU v13, vendor SDK 2.0.0
+# kernel 5.15.170 drivers/video/ingenic_ipu
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_PRJ007 -Wno-error
+
+ipu-t32-objs := ingenic_ipu_v13.o
+obj-m += ipu-t32.o
