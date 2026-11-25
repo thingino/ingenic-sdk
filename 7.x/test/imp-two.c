@@ -7,8 +7,12 @@
  *
  *   imp-two [seconds]
  *
- * IMP_SENSOR, IMP_ADDR, IMP_W, IMP_H pick the sensor and its size;
- * SUB_W and SUB_H the second channel's size (default 640x360).
+ * Like a streamer, it reads the sensor size from /proc/jz/sensor and only
+ * enables the frame source scaler on a channel smaller than the sensor; with
+ * the files missing the sub channel gets no scaler and EnableChn(1) fails.
+ * IMP_SENSOR, IMP_ADDR pick the sensor; IMP_W and IMP_H its size when the
+ * proc files do not say; SUB_W and SUB_H the second channel's size
+ * (default 640x360).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -31,6 +35,21 @@ static int envi(const char *n, int d) { const char *v = getenv(n); return v ? (i
 extern int IMP_Encoder_SetPoolSize(int size);
 
 #define STEP(x) do { int r_ = (x); if (r_ < 0) { printf("%s failed %d\n", #x, r_); return 1; } } while (0)
+
+static int procint(const char *key)
+{
+	char path[64], buf[32] = "";
+	FILE *f;
+
+	snprintf(path, sizeof(path), "/proc/jz/sensor/sensor0/%s", key);
+	f = fopen(path, "r");
+	if (!f)
+		return 0;
+	if (!fgets(buf, sizeof(buf), f))
+		buf[0] = 0;
+	fclose(f);
+	return atoi(buf);
+}
 
 static volatile int stop;
 static volatile int frames[2];
@@ -108,6 +127,7 @@ int main(int argc, char **argv)
 	const char *name = envs("IMP_SENSOR", "jxf23");
 	IMPSensorInfo si;
 	pthread_t th[2];
+	int known = 0;
 	double t0, t;
 	int i, last[2] = { 0, 0 }, rc = 0;
 
@@ -125,8 +145,16 @@ int main(int argc, char **argv)
 	STEP(IMP_ISP_EnableTuning());
 	STEP(IMP_ISP_Tuning_SetSensorFPS(25, 1));
 	puts("isp up");
+	if (procint("width") > 0 && procint("height") > 0) {
+		w = procint("width");
+		h = procint("height");
+		known = 1;
+		printf("sensor size from /proc/jz/sensor: %dx%d\n", w, h);
+	} else {
+		puts("sensor size not in /proc/jz/sensor");
+	}
 
-	if (setup(0, w, h, 3, 0) || setup(1, sw, sh, 2, 1))
+	if (setup(0, w, h, 3, 0) || setup(1, sw, sh, 2, known && (sw != w || sh != h)))
 		return 1;
 	STEP(IMP_FrameSource_EnableChn(0));
 	puts("EnableChn(0) ok");
