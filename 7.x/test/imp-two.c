@@ -10,6 +10,9 @@
  * Like a streamer, it reads the sensor size from /proc/jz/sensor and only
  * enables the frame source scaler on a channel smaller than the sensor; with
  * the files missing the sub channel gets no scaler and EnableChn(1) fails.
+ * Build flags: -DIMP_API2 for the 2.x libimp (T31, T32, T33: IMPVI_MAIN
+ * sensor calls, IMP_Encoder_SetDefaultParam), -DIMP_ENC_AVC_AUTO for the
+ * T21/T23 encoder attributes (profile -1 and a stream buffer size).
  * IMP_SENSOR, IMP_ADDR pick the sensor; IMP_W and IMP_H its size when the
  * proc files do not say; SUB_W and SUB_H the second channel's size
  * (default 640x360).
@@ -32,7 +35,9 @@
 static const char *envs(const char *n, const char *d) { const char *v = getenv(n); return v ? v : d; }
 static int envi(const char *n, int d) { const char *v = getenv(n); return v ? (int)strtol(v, NULL, 0) : d; }
 
+#ifndef IMP_API2
 extern int IMP_Encoder_SetPoolSize(int size);
+#endif
 
 #define STEP(x) do { int r_ = (x); if (r_ < 0) { printf("%s failed %d\n", #x, r_); return 1; } } while (0)
 
@@ -102,8 +107,17 @@ static int setup(int ch, int w, int h, int nr, int scale)
 
 	STEP(IMP_Encoder_CreateGroup(ch));
 	memset(&ea, 0, sizeof(ea));
+#ifdef IMP_API2
+	STEP(IMP_Encoder_SetDefaultParam(&ea, IMP_ENC_PROFILE_AVC_MAIN, ENC_RC_MODE_FIXQP, w, h,
+					 25, 1, 0, 0, 25, 0));
+#else
 	ea.encAttr.enType = PT_H264;
+#ifdef IMP_ENC_AVC_AUTO
+	ea.encAttr.profile = -1;
+	ea.encAttr.bufSize = w * h / 2;
+#else
 	ea.encAttr.profile = 1;
+#endif
 	ea.encAttr.picWidth = w;
 	ea.encAttr.picHeight = h;
 	ea.rcAttr.outFrmRate.frmRateNum = 25;
@@ -113,6 +127,7 @@ static int setup(int ch, int w, int h, int nr, int scale)
 	ea.rcAttr.attrRcMode.attrH264FixQp.qp = 38;
 	ea.rcAttr.attrHSkip.hSkipAttr.skipType = IMP_Encoder_STYPE_N1X;
 	ea.rcAttr.attrHSkip.maxHSkipType = IMP_Encoder_STYPE_N1X;
+#endif
 	STEP(IMP_Encoder_CreateChn(ch, &ea));
 	STEP(IMP_Encoder_RegisterChn(ch, ch));
 	STEP(IMP_System_Bind(&fs, &enc));
@@ -137,13 +152,26 @@ int main(int argc, char **argv)
 	strcpy(si.i2c.type, name);
 	si.i2c.addr = envi("IMP_ADDR", 0x40);
 
+#ifdef IMP_API2
+	si.rst_gpio = si.pwdn_gpio = si.power_gpio = si.switch_gpio = -1;
+	si.video_interface = IMPISP_SENSOR_VI_MIPI_CSI0;
+	si.mclk = IMPISP_SENSOR_MCLK0;
+	si.fps.num = 25;
+	si.fps.den = 1;
+	STEP(IMP_ISP_Open());
+	STEP(IMP_ISP_AddSensor(IMPVI_MAIN, &si));
+	STEP(IMP_ISP_EnableSensor(IMPVI_MAIN, &si));
+#else
 	IMP_Encoder_SetPoolSize(2 * 1024 * 1024);
 	STEP(IMP_ISP_Open());
 	STEP(IMP_ISP_AddSensor(&si));
 	STEP(IMP_ISP_EnableSensor());
+#endif
 	STEP(IMP_System_Init());
 	STEP(IMP_ISP_EnableTuning());
+#if !defined(IMP_API2) && !defined(IMP_ENC_AVC_AUTO)
 	STEP(IMP_ISP_Tuning_SetSensorFPS(25, 1));
+#endif
 	puts("isp up");
 	if (procint("width") > 0 && procint("height") > 0) {
 		w = procint("width");
@@ -154,7 +182,7 @@ int main(int argc, char **argv)
 		puts("sensor size not in /proc/jz/sensor");
 	}
 
-	if (setup(0, w, h, 3, 0) || setup(1, sw, sh, 2, known && (sw != w || sh != h)))
+	if (setup(0, w, h, envi("MAIN_NRVB", 3), 0) || setup(1, sw, sh, 2, known && (sw != w || sh != h)))
 		return 1;
 	STEP(IMP_FrameSource_EnableChn(0));
 	puts("EnableChn(0) ok");

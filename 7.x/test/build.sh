@@ -11,7 +11,8 @@
 #            imp-enc.c (T21 T23), t31/imp-enc.c (T31): capture and encode
 #            t32/imp-enc.c, t32/imp-osd.c (T32, T33): as the T31 ones with the 2.x API;
 #            build them with the SoC's include directory (SENSOR=gc5613 I2CADDR=0x31 on the T33)
-#            imp-two.c (T10 T20 T30): main and sub stream at once, frames per second of each
+#            imp-two.c (all SoCs): main and sub stream at once, frames per second of each;
+#            CFLAGS=-DIMP_API2 on T31 T32 T33, -DIMP_ENC_AVC_AUTO on T21 T23
 #            imp-ai.c imp-ao.c (all): audio capture and playback; imp-dmic.c (T32): DMIC capture;
 #            pcmtone.py, wavtone.py, phasejump.py analyse the result
 # The T10, T20 and T30 vendor libraries were linked against uClibc 0.9.33:
@@ -23,5 +24,5 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 $CC -Os -shared -fPIC -o libctype_shim.so "$HERE/ctype_shim.c"
 for t in "$@"; do
 	n=$(basename "$t" .c)
-	$CC -Os -Wall -I"$IMPINC" -o "$n" "$t" -L"$IMPLIB" -limp -lalog ./libctype_shim.so -lpthread -lm -ldl
+	$CC $CFLAGS -Os -Wall -I"$IMPINC" -o "$n" "$t" -L"$IMPLIB" -limp -lalog ./libctype_shim.so -lpthread -lm -ldl
 done
