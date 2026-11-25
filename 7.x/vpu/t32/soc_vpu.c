@@ -531,7 +531,7 @@ err_fvlist_empty:
 
 static long soc_vpu_release_internal(struct soc_channel *sc, struct vpu_list *vlist)
 {
-	unsigned long fvflag = 0, vlflag = 0;
+	unsigned long fvflag = 0;
 	struct vpu *vpu = NULL;
 	struct free_vpu_list *fvlist = NULL;
 
@@ -818,7 +818,8 @@ static long soc_channel_run(struct soc_channel *sc, long usr_arg)
 
 err_copy_to_user:
 err_vpu_release_vpu:
-	copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node));
+	if (copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node)))
+		ret = -EFAULT;
 err_vpu_start_vpu:
 err_vpu_reset:
 	soc_vpu_release(sc, &cnode);
@@ -863,7 +864,8 @@ static long soc_channel_start(struct soc_channel *sc, long usr_arg)
 	return 0;
 
 err_copy_to_user:
-	copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node));
+	if (copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node)))
+		ret = -EFAULT;
 err_vpu_start_vpu_on:
 err_vpu_reset:
 	soc_vpu_release(sc, &cnode);
@@ -903,7 +905,8 @@ static long soc_channel_wait_complete(struct soc_channel *sc, long usr_arg)
 
 err_copy_to_user:
 err_vpu_release_vpu:
-	copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node));
+	if (copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node)))
+		ret = -EFAULT;
 err_vpu_wait_complete:
 	soc_vpu_release(sc, &cnode);
 err_copy_from_user:
@@ -1166,7 +1169,8 @@ static long soc_channel_set_bsfull_reg(struct soc_channel *sc, long usr_arg)
 	return ret;
 
 err_copy_to_user:
-	copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node));
+	if (copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node)))
+		ret = -EFAULT;
 err_set_bsfull_reg:
 	soc_vpu_release(sc, &cnode);
 err_copy_from_user:
@@ -1230,8 +1234,8 @@ static long soc_channel_wait_bsfull_complete(struct soc_channel *sc, long usr_ar
 err_vpu_wait_complete:
 	soc_vpu_release(sc, &cnode);
 err_vpu_release_vpu:
-err_set_bsfull_paddr:
-	copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node));
+	if (copy_to_user((void __user *)usr_arg, &cnode, sizeof(struct channel_node)))
+		ret = -EFAULT;
 err_copy_to_user:
 err_copy_from_user:
 	return ret;
