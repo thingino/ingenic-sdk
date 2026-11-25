@@ -153,4 +153,5 @@ static void __exit rmem_exit(void)
 
 module_init(rmem_init);
 module_exit(rmem_exit);
+MODULE_DESCRIPTION("Reserved memory device for libimp");
 MODULE_LICENSE("GPL");
