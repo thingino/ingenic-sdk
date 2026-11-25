@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-2.0
+# tx-isp-t33.ko: the 5.15-built T33 ISP firmware (libPRJ008-firmware-515-540.a,
+# isp_20260618a) plus the adapter that lets it run on Linux 7.x.
+
+ccflags-y += -I$(src)/include -I$(src)
+ccflags-y += -DCONFIG_KERNEL_5_15 -DCONFIG_SOC_PRJ008
+ccflags-y += -Wno-unused-function
+
+tx-isp-t33-objs := tx-isp-module.o tx-isp-funcs.o tx-isp-abi.o txx-funcs.o \
+		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fw.o
+
+obj-m += tx-isp-t33.o
+
+T33_FW := sdk/libt33-firmware.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x are
+# redirected to the translators in txx-funcs.c and tx-isp-twin.c. printk is a
+# macro now; __copy_user is the same routine as 7.x's __raw_copy_to_user.
+T33_REDEF := \
+	--redefine-sym __class_create=t33_class_create_44 \
+	--redefine-sym kmalloc_caches=t33_kmalloc_caches \
+	--redefine-sym kmem_cache_alloc=t33_kmem_cache_alloc_44 \
+	--redefine-sym PDE_DATA=t33_pde_data_44 \
+	--redefine-sym seq_printf=t33_seq_printf_44 \
+	--redefine-sym seq_read=t33_seq_read \
+	--redefine-sym seq_lseek=t33_seq_lseek \
+	--redefine-sym single_release=t33_single_release \
+	--redefine-sym single_open=t33_single_open_44 \
+	--redefine-sym proc_create_data=t33_proc_create_data \
+	--redefine-sym schedule_timeout=t33_schedule_timeout_44 \
+	--redefine-sym cdev_init=t33_cdev_init_44 \
+	--redefine-sym cdev_del=t33_cdev_del_44 \
+	--redefine-sym class_destroy=t33_class_destroy_44 \
+	--redefine-sym device_destroy=t33_device_destroy_44 \
+	--redefine-sym clk_get=t33_clk_get_44 \
+	--redefine-sym clk_set_parent=t33_clk_set_parent_44 \
+	--redefine-sym ioremap_prot=t33_ioremap_prot_44 \
+	--redefine-sym queue_work_on=t33_queue_work_on_44 \
+	--redefine-sym rmem_base=t33_rmem_base \
+	--redefine-sym rmem_size=t33_rmem_size \
+	--redefine-sym strncpy=t33_strncpy \
+	--redefine-sym arch_sync_dma_for_device=t33_arch_sync_dma_for_device \
+	--redefine-sym dma_sync_single_for_device=t33_dma_sync_single_for_device \
+	--redefine-sym filp_open=t33_filp_open \
+	--redefine-sym filp_close=t33_filp_close \
+	--redefine-sym preempt_schedule=t33_preempt_schedule_44
+
+# 5.15's 8-byte __ksymtab entries and their strings: tx-isp-exports.c
+# exports the same six symbols in the native format.
+T33_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings \
+	     -R '__ksymtab*' -R '.rel__ksymtab*'
+
+# The firmware's remove callbacks sit in .exit.text but are referenced from
+# its .data, which modpost rejects; as plain text they are never discarded.
+T33_REDEF += --rename-section .exit.text=.text.t33_exit \
+	     --rename-section .rel.exit.text=.rel.text.t33_exit
+
+quiet_cmd_t33fw = FWFIX   $@
+      cmd_t33fw = $(OBJCOPY) $(T33_REDEF) $(T33_STRIP) $< $@
+
+$(obj)/tx-isp-fw.o: $(src)/$(T33_FW) FORCE
+	$(call if_changed,t33fw)
+
+targets += tx-isp-fw.o
