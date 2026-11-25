@@ -86,6 +86,7 @@ static int rmem_release(struct inode *inode, struct file *filp) { return 0; }
 static long rmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	struct rmem_flush_cache_info info;
+	long ret;
 
 	if (cmd != RMEN_CMD_FLUSH_CACHE)
 		return -EINVAL;
@@ -93,7 +94,11 @@ static long rmem_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return -EFAULT;
 	if (trace)
 		pr_info("rmem: flush %08x+%x dir %u\n", info.addr, info.len, info.dir);
-	return rmem_cache_sync_user(info.addr, info.len, info.dir);
+	ret = rmem_cache_sync_user(info.addr, info.len, info.dir);
+	/* the A1 TDE hands over the physical address of its buffer, not a mapping */
+	if (ret == -EFAULT && rmem_cache_in_rmem(info.addr, info.len))
+		ret = rmem_cache_sync_phys(info.addr, info.len, info.dir);
+	return ret;
 }
 
 /*
