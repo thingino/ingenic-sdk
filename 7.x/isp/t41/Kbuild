@@ -21,6 +21,7 @@ T41_FW := sdk/libt41-firmware.fw
 # 7.x's __raw_copy_to_user.
 T41_REDEF := \
 	--redefine-sym printk=_printk \
+	--redefine-sym kfree=t41_kfree_44 \
 	--redefine-sym PDE_DATA=t41_pde_data_44 \
 	--redefine-sym seq_printf=t41_seq_printf_44 \
 	--redefine-sym schedule_timeout=t41_schedule_timeout_44 \

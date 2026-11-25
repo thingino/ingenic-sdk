@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
+#include <linux/xarray.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h>
 #include <linux/mutex.h>
@@ -482,9 +483,23 @@ static void priv_free_irq(unsigned int irq, void *dev_id)
 	free_irq(irq, dev_id);
 }
 
+/*
+ * The firmware frees some vmalloc() memory with kfree(), which 4.4 let by
+ * and 7.x turns into a warning and a corrupted heap.
+ */
+void t40_kfree_44(const void *p)
+{
+	if (!t40_alloc_untrack(p))
+		return;
+	if (is_vmalloc_addr(p))
+		vfree(p);
+	else
+		kfree(p);
+}
+
 static void priv_kfree(void *p)
 {
-	kfree(p);
+	t40_kfree_44(p);
 }
 
 static void priv_spin_lock_irqsave(spinlock_t *lock, unsigned long *flags)
@@ -548,19 +563,79 @@ static struct clk *t40_dt_clk(int i)
 	return clk;
 }
 
+/* the handles clk_get() gave out: a second put of one is dropped, what is left is put at exit */
+static DEFINE_XARRAY(t40_clks);
+
 static struct clk *priv_clk_get(struct device *dev, const char *id)
 {
 	/* a firmware-owned dev would be read past the end of its object */
-	return clk_get(NULL, id);
+	struct clk *clk = clk_get(NULL, id);
+
+	if (IS_ERR(clk))
+		pr_warn("t40-isp: no clock \"%s\" (%ld)\n", id ? id : "?", PTR_ERR(clk));
+	else
+		xa_store(&t40_clks, (unsigned long)clk, clk, GFP_KERNEL);
+	return clk;
+}
+
+/*
+ * The firmware's remove path disables the clocks its activate path enabled,
+ * and also when the activate never ran (a sensor that did not answer), which
+ * 4.4's clock code let pass. Each handle's enables are counted here and a
+ * disable without one is dropped.
+ */
+#define T40_CLK_TRACK	64
+
+static struct {
+	struct clk *clk;
+	int enabled;
+} t40_clk_track[T40_CLK_TRACK];
+static DEFINE_SPINLOCK(t40_clk_track_lock);
+
+static int t40_clk_track_add(struct clk *clk, int delta)
+{
+	int i, free = -1, ret = 0;
+
+	spin_lock(&t40_clk_track_lock);
+	for (i = 0; i < T40_CLK_TRACK; i++) {
+		if (t40_clk_track[i].clk == clk)
+			break;
+		if (free < 0 && !t40_clk_track[i].clk)
+			free = i;
+	}
+	if (i == T40_CLK_TRACK) {
+		if (delta > 0 && free >= 0) {
+			t40_clk_track[free].clk = clk;
+			t40_clk_track[free].enabled = delta;
+		} else if (delta < 0) {
+			ret = -ENOENT;
+		}
+	} else if (delta < 0 && t40_clk_track[i].enabled <= 0) {
+		ret = -ENOENT;
+	} else {
+		t40_clk_track[i].enabled += delta;
+		if (!t40_clk_track[i].enabled)
+			t40_clk_track[i].clk = NULL;
+	}
+	spin_unlock(&t40_clk_track_lock);
+	return ret;
 }
 
 static int priv_clk_enable(struct clk *clk)
 {
-	return clk_prepare_enable(clk);
+	int ret = clk_prepare_enable(clk);
+
+	if (!ret)
+		t40_clk_track_add(clk, 1);
+	return ret;
 }
 
 static void priv_clk_disable(struct clk *clk)
 {
+	if (IS_ERR_OR_NULL(clk))
+		return;
+	if (t40_clk_track_add(clk, -1))
+		return;
 	clk_disable_unprepare(clk);
 }
 
@@ -571,7 +646,9 @@ static unsigned long priv_clk_get_rate(struct clk *clk)
 
 static void priv_clk_put(struct clk *clk)
 {
-	clk_put(clk);
+	/* 4.4's clk_put() ignored an error pointer the firmware kept from a failed clk_get() */
+	if (!IS_ERR_OR_NULL(clk) && xa_erase(&t40_clks, (unsigned long)clk))
+		clk_put(clk);
 }
 
 /*
@@ -1194,6 +1271,52 @@ static void t40_irq_quiet_add(unsigned int irq)
 	spin_unlock(&t40_irq_lock);
 }
 
+/*
+ * The firmware frees an interrupt only when a flag it sets elsewhere is
+ * set, so a module that never got to that point leaves its handlers
+ * registered, and the next load cannot request the line. The requests are
+ * recorded here, dropped by the firmware's own free_irq() and whatever is
+ * left is freed when the module exits.
+ */
+#define T40_IRQ_TRACK	16
+
+static struct {
+	unsigned int irq;
+	void *dev;
+} t40_irq_track[T40_IRQ_TRACK];
+
+static void t40_irq_track_set(unsigned int irq, void *dev, bool add)
+{
+	int i;
+
+	spin_lock(&t40_irq_lock);
+	for (i = 0; i < T40_IRQ_TRACK; i++) {
+		if (add && !t40_irq_track[i].irq) {
+			t40_irq_track[i].irq = irq;
+			t40_irq_track[i].dev = dev;
+			break;
+		}
+		if (!add && t40_irq_track[i].irq == irq && t40_irq_track[i].dev == dev) {
+			t40_irq_track[i].irq = 0;
+			break;
+		}
+	}
+	spin_unlock(&t40_irq_lock);
+}
+
+static void t40_irq_track_free_all(void)
+{
+	int i;
+
+	for (i = 0; i < T40_IRQ_TRACK; i++) {
+		if (t40_irq_track[i].irq) {
+			pr_warn("t40-isp: freeing irq %u the firmware left\n", t40_irq_track[i].irq);
+			free_irq(t40_irq_track[i].irq, t40_irq_track[i].dev);
+			t40_irq_track[i].irq = 0;
+		}
+	}
+}
+
 int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
 				 irq_handler_t thread_fn, unsigned long flags,
 				 const char *name, void *dev)
@@ -1204,6 +1327,8 @@ int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
 	ret = request_threaded_irq(irq, handler, thread_fn, flags | IRQF_NO_AUTOEN, name, dev);
 	if (ret)
 		t40_irq_quiet_take(irq, true);
+	else
+		t40_irq_track_set(irq, dev, true);
 	return ret;
 }
 void private_enable_irq(unsigned int irq) { enable_irq(irq); }
@@ -1213,7 +1338,11 @@ void private_disable_irq(unsigned int irq)
 		return;
 	disable_irq(irq);
 }
-PRIVV(free_irq, (unsigned int irq, void *dev_id), (irq, dev_id))
+void private_free_irq(unsigned int irq, void *dev_id)
+{
+	t40_irq_track_set(irq, dev_id, false);
+	priv_free_irq(irq, dev_id);
+}
 
 void __private_spin_lock_irqsave(spinlock_t *lock, unsigned long *flags)
 {
@@ -1359,17 +1488,19 @@ void *private_vmalloc(unsigned long size)
 {
 	if (!size)
 		return NULL;
-	return size >= PAGE_SIZE ? vmalloc(size) : kmalloc(size, GFP_KERNEL);
+	return t40_alloc_track_ext(size >= PAGE_SIZE ? vmalloc(size) : kmalloc(size, GFP_KERNEL));
 }
 void private_vfree(const void *addr)
 {
+	if (!t40_alloc_untrack(addr))
+		return;
 	if (is_vmalloc_addr(addr))
 		vfree(addr);
 	else
 		kfree(addr);
 }
 void *private_kmalloc(size_t s, gfp_t gfp) { return t40_priv_kmalloc(s, gfp); }
-void private_kfree(void *p) { kfree(p); }
+void private_kfree(void *p) { t40_kfree_44(p); }
 long private_copy_from_user(void *to, const void __user *from, long size)
 {
 	return copy_from_user(to, from, size);
@@ -1506,6 +1637,16 @@ void tx_isp_abi_exit(void)
 {
 	int i;
 
+	t40_irq_track_free_all();
+	t40_alloc_free_all();
+	{
+		unsigned long idx;
+		void *c;
+
+		xa_for_each(&t40_clks, idx, c)
+			clk_put(c);
+		xa_destroy(&t40_clks);
+	}
 	t40_pins_put();
 
 	for (i = 0; i < ARRAY_SIZE(t40_clk_lookups); i++) {

@@ -21,6 +21,7 @@ T40_FW := sdk/libt40-firmware.fw
 # 7.x's __raw_copy_to_user.
 T40_REDEF := \
 	--redefine-sym printk=_printk \
+	--redefine-sym kfree=t40_kfree_44 \
 	--redefine-sym PDE_DATA=t40_pde_data_44 \
 	--redefine-sym seq_printf=t40_seq_printf_44 \
 	--redefine-sym schedule_timeout=t40_schedule_timeout_44 \

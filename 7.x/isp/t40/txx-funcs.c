@@ -11,6 +11,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
+#include <linux/xarray.h>
 #include <linux/mutex.h>
 #include <linux/fs.h>
 #include <linux/file.h>
@@ -83,9 +84,49 @@ unsigned long t40_jiffies_from_44(unsigned long j)
 	return DIV_ROUND_UP(j * HZ, 100);
 }
 
+/*
+ * Memory the firmware allocates through the private_* and kmem_cache entry
+ * points is recorded, so a pointer it frees twice, or frees with the wrong
+ * allocator's counterpart after a failed load, is dropped instead of
+ * corrupting 7.x's heap (4.4 let both pass), and what a module that never
+ * ran its teardown left behind is freed when the module exits.
+ */
+static DEFINE_XARRAY(t40_allocs);
+
+static void *t40_alloc_track(void *p)
+{
+	if (!ZERO_OR_NULL_PTR(p) && xa_err(xa_store(&t40_allocs, (unsigned long)p, p, GFP_ATOMIC)))
+		pr_warn_once("t40-isp: allocation tracking out of memory\n");
+	return p;
+}
+
+bool t40_alloc_untrack(const void *p)
+{
+	if (ZERO_OR_NULL_PTR(p))
+		return false;
+	if (xa_erase(&t40_allocs, (unsigned long)p))
+		return true;
+	pr_warn_once("t40-isp: dropped a free of %p the firmware did not allocate or freed already\n", p);
+	return false;
+}
+
+void t40_alloc_free_all(void)
+{
+	unsigned long idx;
+	void *p;
+
+	xa_for_each(&t40_allocs, idx, p) {
+		if (is_vmalloc_addr(p))
+			vfree(p);
+		else
+			kfree(p);
+	}
+	xa_destroy(&t40_allocs);
+}
+
 void *t40_priv_kmalloc(size_t s, gfp_t gfp)
 {
-	void *addr = kmalloc(s, t40_gfp_from_44(gfp));
+	void *addr = t40_alloc_track(kmalloc(s, t40_gfp_from_44(gfp)));
 
 	if (!addr)
 		pr_err("%s: kmalloc(%zu) failed\n", __func__, s);
@@ -108,7 +149,7 @@ void *t40_kmalloc_caches[14] = {
 
 void *t40_kmem_cache_alloc_44(void *cache, gfp_t gfp)
 {
-	return kmalloc((unsigned long)cache, t40_gfp_from_44(gfp));
+	return t40_alloc_track(kmalloc((unsigned long)cache, t40_gfp_from_44(gfp)));
 }
 
 /* targets of the objcopy --redefine-sym rewrites in the Kbuild */
@@ -402,3 +443,8 @@ u32 t40___div64_32(u64 *n, u32 base)
  * mips_io_port_base, which 4.4's MIPS kept at KSEG1; 7.x leaves it 0.
  */
 unsigned long t40_mips_io_port_base = 0xa0000000;
+
+void *t40_alloc_track_ext(void *p)
+{
+	return t40_alloc_track(p);
+}
