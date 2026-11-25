@@ -1,10 +1,10 @@
 # Ingenic modules for mainline Linux 7.x
 
 Out-of-tree kernel modules that run the stock Ingenic userspace (libimp,
-libalog) on mainline Linux 7.x on the T10, T20, T21, T23, T30 and T31.
+libalog) on mainline Linux 7.x on the T10, T20, T21, T23, T30, T31 and T32.
 
 They pair with the kernel branches `ingenic-tNN-7.4` (`ingenic-t10-7.4` ...
-`ingenic-t31-7.4`) of https://github.com/gtxaspec/linux, which carry the SoC
+`ingenic-t31-7.4`, T32: the `ingenic-7.4` branch) of https://github.com/gtxaspec/linux, which carry the SoC
 support, the device tree nodes these modules look up (ISP, encoder, IPU, AIC,
 codec) and the `rmem=` carve-out.
 
@@ -35,6 +35,7 @@ without it every sensor in `7.x/sensor-src/<soc>` is built.
 | T23 | closed firmware 1.3.0 (4.4.94 build) + ABI adapter | `soc-vpu-t23.ko` (helix) | `ipu-t23.ko` | oss3 | sc2336 |
 | T30 | vendor source + Apical blob | `soc-vpu-t30.ko` (helix H.264/JPEG, radix H.265) | `ipu-t30.ko` | oss2 | jxf23, sc2235, sc4236 |
 | T31 | closed firmware 1.1.6 (3.10 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | `ipu.ko` | oss3 | gc4653 |
+| T32 | closed firmware isp_20260618a (5.15 build) + ABI adapter | `soc-vpu-t32.ko` (helix H.264/JPEG, radix H.265) | `ipu-t32.ko` (IPU v13) | | sc4336p |
 
 Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`
 region, and `ispmem=` on the T10/T20) and `android_logger.ko` (`/dev/log_*`).
