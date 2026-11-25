@@ -233,24 +233,41 @@ struct device_node *private_dev_of_node(struct device *dev)
 /*
  * Interrupt storm guard: the firmware's handlers are written for a 4.4 kernel
  * that survives an interrupt its handler does not quiesce. Each line the
- * firmware requests goes through a wrapper that counts calls per second; past
- * A1_STORM_LIMIT the line is disabled and a1_storm_hook() (a driver may set it
- * to dump the device's status registers) reports it once.
+ * firmware requests goes through a wrapper that counts hard interrupts per
+ * second; past the line's limit it is disabled, reported once through
+ * a1_storm_hook() (a driver may dump its device's status registers) and
+ * re-enabled two seconds later, so a noisy line degrades to a slow poll. The
+ * hot plug line is threaded and its events are rare, so its limit is low.
  */
-#define A1_STORM_LIMIT	20000
-#define A1_IRQW_MAX	16
+#define A1_STORM_LIMIT		20000
+#define A1_STORM_LIMIT_THREADED	300 /* pin interrupts */
+#define A1_IRQW_MAX		16
 
 struct a1_irqw {
 	unsigned int irq;
 	void *dev;
 	irq_handler_t handler;
+	irq_handler_t thread_fn;
+	unsigned int limit;
 	unsigned long window;
 	unsigned int count;
 	bool dead;
+	bool reported;
+	struct delayed_work rearm;
 };
 
 static struct a1_irqw a1_irqw[A1_IRQW_MAX];
 static void (*a1_storm_hook)(unsigned int irq);
+
+static void a1_irq_rearm(struct work_struct *work)
+{
+	struct a1_irqw *w = container_of(work, struct a1_irqw, rearm.work);
+
+	w->window = jiffies;
+	w->count = 0;
+	w->dead = false;
+	enable_irq(w->irq);
+}
 
 static irqreturn_t a1_irq_wrap(int irq, void *p)
 {
@@ -261,23 +278,47 @@ static irqreturn_t a1_irq_wrap(int irq, void *p)
 		w->window = jiffies;
 		w->count = 0;
 	}
-	if (++w->count > A1_STORM_LIMIT && !w->dead) {
+	if (++w->count > w->limit && !w->dead) {
 		w->dead = true;
 		disable_irq_nosync(irq);
-		pr_err("a1: interrupt %d storm (%u in one second), line disabled\n", irq, w->count);
-		if (a1_storm_hook)
-			a1_storm_hook(irq);
+		if (!w->reported) {
+			w->reported = true;
+			pr_err("a1: interrupt %d storm (%u in one second), line paused\n", irq, w->count);
+			if (a1_storm_hook)
+				a1_storm_hook(irq);
+		}
+		schedule_delayed_work(&w->rearm, 2 * HZ);
 	}
 	return r;
 }
 
-static struct a1_irqw *a1_irqw_get(unsigned int irq, void *dev, irq_handler_t h)
+static irqreturn_t a1_irq_thread_wrap(int irq, void *p)
+{
+	struct a1_irqw *w = p;
+
+	return w->thread_fn(irq, w->dev);
+}
+
+/* only pin interrupts (the hot plug line) are rare enough for the low limit */
+static bool a1_irq_is_gpio(unsigned int irq)
+{
+	struct irq_data *d = irq_get_irq_data(irq);
+
+	return d && d->chip && d->chip->name && !strncmp(d->chip->name, "GPIO", 4);
+}
+
+static struct a1_irqw *a1_irqw_get(unsigned int irq, void *dev, irq_handler_t h,
+				   irq_handler_t t)
 {
 	int i;
 
 	for (i = 0; i < A1_IRQW_MAX; i++) {
 		if (!a1_irqw[i].handler) {
-			a1_irqw[i] = (struct a1_irqw){ .irq = irq, .dev = dev, .handler = h };
+			a1_irqw[i] = (struct a1_irqw){
+				.irq = irq, .dev = dev, .handler = h, .thread_fn = t,
+				.limit = a1_irq_is_gpio(irq) ? A1_STORM_LIMIT_THREADED : A1_STORM_LIMIT,
+			};
+			INIT_DELAYED_WORK(&a1_irqw[i].rearm, a1_irq_rearm);
 			return &a1_irqw[i];
 		}
 	}
@@ -294,43 +335,29 @@ static struct a1_irqw *a1_irqw_find(unsigned int irq, void *dev)
 	return NULL;
 }
 
-int private_request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
-			const char *name, void *dev)
+int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
+				 irq_handler_t thread_fn, unsigned long flags,
+				 const char *name, void *dev)
 {
+	unsigned long f = flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT);
 	struct a1_irqw *w;
 	int ret;
 
 	irq = A1_IRQ_XLATE(irq);
-	w = a1_irqw_get(irq, dev, handler);
+	w = handler ? a1_irqw_get(irq, dev, handler, thread_fn) : NULL;
 	if (!w)
-		return request_irq(irq, handler, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, dev);
-	ret = request_irq(irq, a1_irq_wrap, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, w);
+		return request_threaded_irq(irq, handler, thread_fn, f, name, dev);
+	ret = request_threaded_irq(irq, a1_irq_wrap, thread_fn ? a1_irq_thread_wrap : NULL,
+				   f, name, w);
 	if (ret)
 		w->handler = NULL;
 	return ret;
 }
 
-int private_request_threaded_irq(unsigned int irq, irq_handler_t handler,
-				 irq_handler_t thread_fn, unsigned long flags,
-				 const char *name, void *dev)
+int private_request_irq(unsigned int irq, irq_handler_t handler, unsigned long flags,
+			const char *name, void *dev)
 {
-	struct a1_irqw *w;
-	int ret;
-
-	irq = A1_IRQ_XLATE(irq);
-	if (!handler || thread_fn)
-		return request_threaded_irq(irq, handler, thread_fn,
-					    flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT),
-					    name, dev);
-	w = a1_irqw_get(irq, dev, handler);
-	if (!w)
-		return request_threaded_irq(irq, handler, thread_fn,
-					    flags & (IRQF_SHARED | IRQF_TRIGGER_MASK | IRQF_ONESHOT),
-					    name, dev);
-	ret = request_irq(irq, a1_irq_wrap, flags & (IRQF_SHARED | IRQF_TRIGGER_MASK), name, w);
-	if (ret)
-		w->handler = NULL;
-	return ret;
+	return private_request_threaded_irq(irq, handler, NULL, flags & ~IRQF_ONESHOT, name, dev);
 }
 
 void private_enable_irq(unsigned int irq)
@@ -354,6 +381,7 @@ void private_free_irq(unsigned int irq, void *dev)
 
 	if (w) {
 		free_irq(w->irq, w);
+		cancel_delayed_work_sync(&w->rearm);
 		w->handler = NULL;
 		return;
 	}
@@ -445,6 +473,12 @@ void private_clk_disable_unprepare(struct clk *clk)
 void private_msleep(unsigned int ms)
 {
 	msleep(ms);
+}
+
+/* without it the firmware's polling loops never sleep */
+int private_schedule_hrtimeout(ktime_t *ex, const enum hrtimer_mode mode)
+{
+	return schedule_hrtimeout(ex, mode);
 }
 
 void private_init_completion(struct completion *x)
@@ -816,6 +850,8 @@ struct a1_timer {
 	struct timer_list tl;
 	void (*func)(unsigned long);
 	unsigned long data;
+	unsigned long window;
+	unsigned int count;
 };
 
 static struct a1_timer a1_timers[4];
@@ -824,6 +860,16 @@ static void a1_timer_cb(struct timer_list *t)
 {
 	struct a1_timer *tw = container_of(t, struct a1_timer, tl);
 
+	if (time_after(jiffies, tw->window + HZ)) {
+		tw->window = jiffies;
+		tw->count = 0;
+	}
+	/* a callback that re-arms itself for "now" would livelock the timer softirq */
+	if (++tw->count > 2000) {
+		if (tw->count == 2001)
+			pr_err("a1: timer %ps re-armed %u times in a second, stopped\n", tw->func, tw->count);
+		return;
+	}
 	tw->func(tw->data);
 }
 
