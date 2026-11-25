@@ -491,11 +491,39 @@ long private_copy_to_user(void __user *to, const void *from, long size)
 	return copy_to_user(to, from, size);
 }
 
+/*
+ * 4.4's seq_file keeps private at offset 76; the firmware's show function
+ * reads it there. The show gets a stand-in with that member and a pointer
+ * to the real seq_file, which private_seq_printf() unwraps.
+ */
+#define SEQ44_PRIVATE	76
+#define SEQ44_MAGIC	0x41315351
+
+struct a1_seq44 {
+	u32 magic;
+	struct seq_file *real;
+	u8 pad[SEQ44_PRIVATE - 8];
+	void *private;
+	u8 tail[32];
+};
+
+static int (*a1_blob_show)(struct seq_file *, void *);
+
+static int a1_show(struct seq_file *m, void *v)
+{
+	struct a1_seq44 f = { .magic = SEQ44_MAGIC, .real = m, .private = m->private };
+
+	return a1_blob_show((struct seq_file *)&f, v);
+}
+
 void private_seq_printf(struct seq_file *m, const char *fmt, ...)
 {
+	struct a1_seq44 *f = (struct a1_seq44 *)m;
 	struct va_format vaf;
 	va_list args;
 
+	if (f->magic == SEQ44_MAGIC)
+		m = f->real;
 	va_start(args, fmt);
 	vaf.fmt = fmt;
 	vaf.va = &args;
@@ -506,7 +534,8 @@ void private_seq_printf(struct seq_file *m, const char *fmt, ...)
 int private_single_open_size(struct file *file, int (*show)(struct seq_file *, void *),
 			     void *data, size_t size)
 {
-	return single_open_size(file, show, data, size);
+	a1_blob_show = show;
+	return single_open_size(file, a1_show, data, size);
 }
 
 ssize_t private_seq_read(struct file *f, char __user *b, size_t s, loff_t *p)

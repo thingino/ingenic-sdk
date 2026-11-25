@@ -2,7 +2,7 @@
 # ipu-a1.ko: the A1 IPU firmware of vendor SDK 1.7.0 (built for the 4.4.94
 # kernel) plus the adapter that lets it run on Linux 7.x.
 
-ccflags-y += -Wno-missing-prototypes
+ccflags-y += -Wno-missing-prototypes -Wno-missing-declarations
 
 ipu-a1-objs := ipu_a1_main.o ipu-fw.o
 obj-m += ipu-a1.o
