@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-2.0
+# tx-isp-t41.ko: the 4.4.94-built T41 ISP firmware (libt41-firmware.a, 1.2.6,
+# isp_20250915a) plus the adapter that lets it run on Linux 7.x.
+
+ccflags-y += -I$(src)/include -I$(src)
+ccflags-y += -DCONFIG_KERNEL_4_4_94 -Wno-unused-function
+
+# the vendor toolchain sets an e_flags bit the mainline one does not know
+ldflags-y += --no-warn-mismatch
+
+tx-isp-t41-objs := tx-isp-module.o tx-isp-funcs.o tx-isp-abi.o txx-funcs.o \
+		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fw.o
+
+obj-m += tx-isp-t41.o
+
+T41_FW := sdk/libt41-firmware.fw
+
+# The firmware's direct imports whose semantics or layout changed on 7.x are
+# redirected to the translators in txx-funcs.c, tx-isp-abi.c and
+# tx-isp-twin.c. printk is a macro now; __copy_user is the same routine as
+# 7.x's __raw_copy_to_user.
+T41_REDEF := \
+	--redefine-sym printk=_printk \
+	--redefine-sym PDE_DATA=t41_pde_data_44 \
+	--redefine-sym seq_printf=t41_seq_printf_44 \
+	--redefine-sym schedule_timeout=t41_schedule_timeout_44 \
+	--redefine-sym cdev_init=t41_cdev_init_44 \
+	--redefine-sym cdev_del=t41_cdev_del_44 \
+	--redefine-sym misc_deregister=t41_misc_deregister_44 \
+	--redefine-sym clk_get=t41_clk_get_44 \
+	--redefine-sym queue_work_on=t41_queue_work_on_44 \
+	--redefine-sym warn_slowpath_null=t41_warn_slowpath_null_44 \
+	--redefine-sym mips_dma_map_ops=t41_dma_map_ops \
+	--redefine-sym dma_alloc_from_coherent=t41_dma_alloc_from_coherent_44 \
+	--redefine-sym dma_release_from_coherent=t41_dma_release_from_coherent_44 \
+	--redefine-sym __ioremap=t41___ioremap_44 \
+	--redefine-sym __iounmap=iounmap \
+	--redefine-sym sched_setscheduler=t41_sched_setscheduler_44 \
+	--redefine-sym __copy_user=__raw_copy_to_user \
+	--redefine-sym __div64_32=t41___div64_32 \
+	--redefine-sym mips_io_port_base=t41_mips_io_port_base \
+	--redefine-sym kernel_mxuv3_begin_partial=t41_mxuv3_begin_partial \
+	--redefine-sym kernel_mxuv3_end=t41_mxuv3_end \
+	--weaken-symbol=tisp_tmo_fpga
+
+# The weakened tisp_tmo_fpga loses to the C function of the same name.
+
+# 4.4.94's 8-byte __ksymtab entries and their strings: tx-isp-exports.c
+# exports the same seven symbols in the native format.
+T41_STRIP := -R '___ksymtab+*' -R '.rel___ksymtab+*' -R __ksymtab_strings \
+	     -R '__ksymtab*' -R '.rel__ksymtab*'
+
+# The firmware's remove callbacks sit in .exit.text but are referenced from
+# its .data, which modpost rejects; as plain text they are never discarded.
+T41_REDEF += --rename-section .exit.text=.text.t41_exit \
+	     --rename-section .rel.exit.text=.rel.text.t41_exit
+
+quiet_cmd_t41fw = FWFIX   $@
+      cmd_t41fw = $(OBJCOPY) $(T41_REDEF) $(T41_STRIP) $< $@
+
+$(obj)/tx-isp-fw.o: $(src)/$(T41_FW) FORCE
+	$(call if_changed,t41fw)
+
+targets += tx-isp-fw.o
