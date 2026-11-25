@@ -14,6 +14,8 @@
 #include "soc_vpu.h"
 #include "helix.h"
 
+#include "soc_vpu_a1.h"
+
 //#define DUMP_HELIX_REG
 
 struct jz_vpu_helix {
@@ -452,8 +454,6 @@ static struct platform_driver jz_vpu_driver = {
 	},
 };
 
-int soc_channel_init(void);
-void soc_channel_exit(void);
 
 /* soc_channel_init() needs one registered vpu, so the platform driver goes first */
 static int __init vpu_init(void)
