@@ -362,7 +362,7 @@ hard_vpu_wait_bs_restart:
 	} else {
 		dev_warn(dev, "[%d:%d] wait_for_bs_completion timeout\n", current->tgid, current->pid);
 		dev_warn(dev, "vpu_stat = %x\n", vpu_readl(vpu, RADIX_CFGC_BASE + RADIX_REG_CFGC_STAT));
-		dev_warn(dev, "ret = %ld, sensor id = %d\n", ret, cnode->sensor_id);
+		dev_warn(dev, "ret = %d, sensor id = %d\n", ret, cnode->sensor_id);
 		dump_hera_regs(dev);
 		dump_hera_regs(dev);
 		ret = -1;
@@ -376,7 +376,6 @@ hard_vpu_wait_bs_restart:
 
 static long vpu_set_bsfull_reg(struct device *dev, struct channel_node * const cnode)
 {
-	unsigned int paddr;
 	struct jz_vpu_radix *vpu = dev_get_drvdata(dev);
 
 	vpu_writel(vpu, RADIX_EMC_BASE + 0x60, 1);

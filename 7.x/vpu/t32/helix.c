@@ -190,7 +190,7 @@ static long vpu_start(struct device *dev, const struct channel_node * const cnod
 
 static long vpu_wait_complete(struct device *dev, struct channel_node * const cnode)
 {
-	long ret = 0, bsreadcnt = 3;
+	long ret = 0;
 	unsigned int v1_status = 0;
 	struct jz_vpu_helix *vpu = dev_get_drvdata(dev);
 
@@ -237,7 +237,7 @@ hard_vpu_wait_restart:
 static long vpu_wait_bs_complete(struct device *dev, struct channel_node * const cnode)
 {
 	unsigned int vpu_status;
-	long ret = 0, bsreadcnt = 3;
+	long ret = 0;
 	unsigned int v1_status = 0;
 	struct jz_vpu_helix *vpu = dev_get_drvdata(dev);
 
