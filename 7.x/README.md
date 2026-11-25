@@ -1,7 +1,7 @@
 # Ingenic modules for mainline Linux 7.x
 
 Out-of-tree kernel modules that run the stock Ingenic userspace (libimp,
-libalog) on mainline Linux 7.x on the T10, T20, T21, T23, T30, T31, T32, T33 and T41.
+libalog) on mainline Linux 7.x on the T10, T20, T21, T23, T30, T31, T32, T33, T40 and T41.
 
 They pair with the single kernel branch `ingenic-7.4` (T10 to T33, one
 `ingenic_tNN_defconfig` per SoC) of https://github.com/gtxaspec/linux, which
@@ -38,6 +38,7 @@ without it every sensor in `7.x/sensor-src/<soc>` is built.
 | T31 | closed firmware 1.1.6 (3.10 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | `ipu.ko` | oss3 | gc4653 |
 | T32 | closed firmware isp_20260618a (5.15 build) + ABI adapter | `soc-vpu-t32.ko` (helix H.264/JPEG, radix H.265) | `ipu-t32.ko` (IPU v13) | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | sc4336p |
 | T33 | closed firmware isp_20260706a (5.15 build) + ABI adapter | `soc-vpu-t33.ko` (helix H.264/JPEG, radix H.265; sources in `vpu/t32`) | `ipu-t33.ko` (IPU v13; sources in `ipu/t32`) | oss3 (AIC, inner codec) | gc5613 |
+| T40 | closed firmware 1.3.1 (4.4.94 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | | oss3 (AIC, inner codec) | imx307 |
 | T41 | closed firmware 1.2.6 (4.4.94 build) + ABI adapter | `avpu.ko` (EL200 H.264/H.265/JPEG) | | oss3 (AIC, inner codec) | gc4023 |
 
 Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`
@@ -51,7 +52,7 @@ the symbols the sensor drivers use. The objcopy steps are in each `Kbuild`.
 
 Layout: `isp/<soc>`, `vpu/<soc>`, `avpu/t31`, `sensor-src/<soc>` per SoC;
 `ipu`, `rmem`, `logger` shared by all; `audio/oss2` shared by the T10, T20,
-T21 and T30; `audio/oss3/t23`, `audio/oss3/t31`, `audio/oss3/t32` and `audio/oss3/t41` (different vendor driver
+T21 and T30; `audio/oss3/t23`, `audio/oss3/t31`, `audio/oss3/t32`, `audio/oss3/t40` and `audio/oss3/t41` (different vendor driver
 releases with different ioctl sets); `audio/oss3/t33` uses the T32's dsp core
 with its own AIC and codec.
 
@@ -69,6 +70,7 @@ The stock libimp of each SoC, on a board with the matching sensor:
 | T31 | H.264 main + sub stream, JPEG | yes | loopback | RTSP streaming |
 | T32 | H.264 main + sub stream, JPEG | yes | | |
 | T33 | H.264 main + sub stream | yes (QEMU) | | QEMU only |
+| T40 | H.264 main + sub stream, JPEG | | capture and playback (QEMU) | silicon: video, test pattern only |
 | T41 | H.264, H.265 main + sub stream, JPEG | | capture and playback | silicon: video only so far |
 
 ## Tests
