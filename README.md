@@ -47,9 +47,12 @@ SENSOR_MODEL=gc4653 ./build.sh t31 3.10 \
 |---|---|---|
 | `CONFIG_INGENIC_ISP` | on (off on a1) | tx-isp core |
 | `CONFIG_INGENIC_SENSOR` | on (off on a1) | sensor driver / `sinfo` prober; needs ISP |
-| `CONFIG_INGENIC_AUDIO` | on | AIC/codec; independent of ISP |
+| `CONFIG_INGENIC_AUDIO` | on (off on a1) | AIC/codec; independent of ISP |
 | `CONFIG_INGENIC_AUDIO_VARIANT` | `oss2` on 3.10, else `oss3`; `oss3` on t23 | audio ABI |
 | `CONFIG_INGENIC_AVPU` | on for t31/c100/t40/t41 | H.264/H.265 encoder |
+| `CONFIG_INGENIC_AIP` | on for a1 (7.x) | AIP engines (`ingenic-aip.ko`) |
+| `CONFIG_INGENIC_VO` / `_FB` | on for a1 (7.x) | video output with HDMI (`vo.ko`, `/dev/vde`) and the framebuffer (`fb.ko`) |
+| `CONFIG_INGENIC_VDEC` | on for a1 (7.x) | VC8000D decoder (`vdec.ko`, `/dev/vdec`) |
 | `CONFIG_INGENIC_SOC_NNA` | on for t40/t41/a1 | neural accelerator |
 | `CONFIG_INGENIC_MPSYS` / `_JZ_DTRNG` | on for t40/t41 | mpsys + hardware TRNG |
 | `CONFIG_INGENIC_GPIO_USERKEYS` | on for 3.10 | GPIO buttons |
