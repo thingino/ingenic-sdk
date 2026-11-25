@@ -163,7 +163,8 @@ void fw_fops_init(struct fw_fops *t, const void *f44, void *blob)
 	t->blob = blob;
 	for (i = 0; i < F44_COUNT; i++)
 		t->orig[i] = F44(f44, i);
-	t->fops.owner = (struct module *)t->orig[F44_OWNER];
+	/* pins the module while a node is open; the firmware's own owner is not a 7.x module */
+	t->fops.owner = THIS_MODULE;
 	t->fops.open = fw_open;
 	t->fops.release = fw_release;
 	if (t->orig[F44_UNLOCKED_IOCTL])
