@@ -35,6 +35,7 @@
 #include <tx-isp-fast.h>
 
 #define TVERSION "V20241105a"
+#define SENSOR_I2C_ADDRESS 0x31
 #define SENSOR_VERSION  "H20260130a"
 
 //#define SENSOR_TEST
