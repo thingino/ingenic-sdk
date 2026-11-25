@@ -609,6 +609,7 @@ static struct device_driver t32_no_driver;
 struct t32_i2c_twin {
 	u8 client44[T32_CLIENT44_SIZE] __aligned(4);
 	struct i2c_client *real;
+	struct module *pin;	/* the sensor module, held while the ISP owns the client */
 };
 
 static struct t32_i2c_twin *t32_i2c_twins[T32_MAX_TWINS];
@@ -675,6 +676,13 @@ static struct i2c_client *priv_i2c_new_device(struct i2c_adapter *adap,
 		pr_err("t32-isp: no sensor driver for %s at 0x%02x\n", real->name, real->addr);
 	BLOB(tw->client44, T32_CLIENT44_DEV_DRIVER, void *) =
 		real->dev.driver ? (void *)real->dev.driver : (void *)&t32_no_driver;
+	/*
+	 * The firmware only holds the sensor module across its own lookup, yet
+	 * calls into the sensor's subdev until it drops the client: without
+	 * this reference rmmod of the sensor frees them under a streaming ISP.
+	 */
+	if (real->dev.driver && try_module_get(real->dev.driver->owner))
+		tw->pin = real->dev.driver->owner;
 
 	mutex_lock(&t32_twin_lock);
 	for (i = 0; i < T32_MAX_TWINS; i++) {
@@ -685,6 +693,7 @@ static struct i2c_client *priv_i2c_new_device(struct i2c_adapter *adap,
 	}
 	mutex_unlock(&t32_twin_lock);
 	if (i == T32_MAX_TWINS) {
+		module_put(tw->pin);
 		kfree(tw);
 		goto err_unregister;
 	}
@@ -709,6 +718,7 @@ static void priv_i2c_unregister_device(struct i2c_client *client)
 {
 	struct t32_i2c_twin *tw = t32_i2c_twin_of(client);
 	struct i2c_client *real = tw ? tw->real : client;
+	struct module *pin = tw ? tw->pin : NULL;
 	int i;
 
 	if (tw) {
@@ -720,6 +730,7 @@ static void priv_i2c_unregister_device(struct i2c_client *client)
 		kfree(tw);
 	}
 	i2c_unregister_device(real);
+	module_put(pin);
 }
 
 /* ---- gpio: 3.10's PA..PD numbering is the pinctrl-ingenic bank * 32 ---------- */
