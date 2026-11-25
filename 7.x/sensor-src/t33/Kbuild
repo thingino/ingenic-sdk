@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# T33 sensors: the vendor drivers, built for 7.x against the adapter in isp/t33
+SENSORS := gc5613
+ccflags-y += -I$(src)/../../isp/t33/include -I$(src)/../../isp/t33
+ccflags-y += -DCONFIG_KERNEL_5_15 -DCONFIG_SOC_PRJ008
+ccflags-y += -Wno-unused-function -Wno-missing-prototypes -Wno-missing-declarations
+include $(src)/../sensors.mk
