@@ -20,6 +20,6 @@
 
 #define SEQ44_SIZE		80
 #define SEQ44_REAL		0
-#define SEQ44_PRIVATE		72
+#define SEQ44_PRIVATE		64
 
 #endif

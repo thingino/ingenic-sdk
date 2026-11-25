@@ -4,7 +4,7 @@
  *
  * The firmware's file_operations handlers read struct file (private_data at
  * 120, f_flags at 28), the /proc show handlers read struct seq_file (private
- * at 72), and its IQ loader reads the struct file and inode it opened
+ * at 64), and its IQ loader reads the struct file and inode it opened
  * (f_pos 48, f_inode 16, i_size 48). All of those are inlined loads at
  * 4.4.94 offsets. The firmware only ever receives these objects as
  * arguments of its own handlers, so each handler is registered through a
