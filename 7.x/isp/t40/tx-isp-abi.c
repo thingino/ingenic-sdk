@@ -99,6 +99,8 @@ MODULE_PARM_DESC(ispmem_size, "ISP private memory size in bytes");
 #define T40_DEV44_DMA_MASK	256	/* u64 * */
 #define T40_DEV44_COHERENT	264	/* u64 */
 #define T40_DEV44_DRIVER_DATA	80	/* void * */
+#define T40_ISP_PLATFORMS	136	/* the firmware's table of {platform_device, platform_driver} in its tx_isp_dev */
+#define T40_ISP_NPLATFORMS	16
 #define T40_RES44_SIZE		28
 #define T40_RES44_START		0
 #define T40_RES44_END		4
@@ -208,6 +210,33 @@ static int t40_twin_probe(struct platform_device *pdev)
 	return probe(td->blob);
 }
 
+/*
+ * tx_isp_remove() runs each registered sub-platform's remove callback through
+ * its 4.4 platform_driver without testing it. One read as NULL on silicon, so
+ * give a missing callback a no-op.
+ */
+static int t40_noop_remove(void *pdev)
+{
+	return 0;
+}
+
+static void t40_fix_platform_array(void *drvdata)
+{
+	unsigned long *e = drvdata ? (unsigned long *)((unsigned char *)drvdata + T40_ISP_PLATFORMS) : NULL;
+	int i;
+
+	for (i = 0; e && i < T40_ISP_NPLATFORMS; i++, e += 2) {
+		unsigned long *drv = (unsigned long *)e[1];
+
+		if (!drv)
+			continue;
+		if (!drv[1]) {
+			pr_warn("t40-isp: sub-platform %d has no remove callback\n", i);
+			drv[1] = (unsigned long)t40_noop_remove;
+		}
+	}
+}
+
 static void t40_twin_remove(struct platform_device *pdev)
 {
 	struct t40_twin_dev *td = t40_dev_by_twin(pdev);
@@ -217,6 +246,8 @@ static void t40_twin_remove(struct platform_device *pdev)
 
 	if (!td)
 		return;
+	if (!strcmp(pdev->name, "tx-isp"))
+		t40_fix_platform_array(BLOB(td->blob, T40_PDEV44_DEV + T40_DEV44_DRIVER_DATA, void *));
 	if (remove)
 		remove(td->blob);
 	BLOB(td->blob, T40_PDEV44_DEV + T40_DEV44_DRIVER, void *) = NULL;
