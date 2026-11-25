@@ -9,7 +9,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/irq.h>
 #include <linux/irqdomain.h>
+#include <linux/clk.h>
 #include <linux/module.h>
+#include <linux/of_address.h>
 #include <linux/mm.h>
 #include <linux/sched.h>
 #include <linux/uaccess.h>
@@ -99,15 +101,31 @@ struct a1_dma_ops {
 		     dma_addr_t handle, unsigned long attrs);
 };
 
+/*
+ * The MMU page table is 4 MiB + 4 KiB of contiguous memory, more than the page
+ * allocator can give: it comes from the reserved region of the devicetree.
+ */
+static phys_addr_t mmu_pt_phys;
+static size_t mmu_pt_size;
+static void __iomem *mmu_pt_virt;
+
 static void *a1_dma_alloc(struct device *dev, size_t size, dma_addr_t *handle,
 			  gfp_t gfp, unsigned long attrs)
 {
+	if (size > (PAGE_SIZE << MAX_PAGE_ORDER)) {
+		if (!mmu_pt_virt || size > mmu_pt_size)
+			return NULL;
+		*handle = mmu_pt_phys;
+		return (void __force *)mmu_pt_virt;
+	}
 	return dma_alloc_coherent(&a1_vdec_pdev->dev, size, handle, GFP_KERNEL);
 }
 
 static void a1_dma_free(struct device *dev, size_t size, void *vaddr,
 			dma_addr_t handle, unsigned long attrs)
 {
+	if ((void __iomem *)vaddr == mmu_pt_virt)
+		return;
 	dma_free_coherent(&a1_vdec_pdev->dev, size, vaddr, handle);
 }
 
@@ -336,10 +354,26 @@ int GetPhysicalAddress_a1(u32 va, u32 *out)
 		out[1] = 0;
 		return 0;
 	}
-	if (get_user_pages_fast(va & PAGE_MASK, 1, 0, &page) != 1)
-		return -19;
-	pa = page_to_phys(page) | (va & 0xfff);
-	put_page(page);
+	if (get_user_pages_fast(va & PAGE_MASK, 1, 0, &page) == 1) {
+		pa = page_to_phys(page) | (va & 0xfff);
+		put_page(page);
+	} else {
+		/* /dev/rmem is mapped with io_remap_pfn_range(): no struct page */
+		struct follow_pfnmap_args args = { .address = va & PAGE_MASK };
+		struct mm_struct *mm = current->mm;
+
+		if (!mm)
+			return -19;
+		mmap_read_lock(mm);
+		args.vma = vma_lookup(mm, va);
+		if (!args.vma || follow_pfnmap_start(&args)) {
+			mmap_read_unlock(mm);
+			return -19;
+		}
+		pa = ((u64)args.pfn << PAGE_SHIFT) | (va & 0xfff);
+		follow_pfnmap_end(&args);
+		mmap_read_unlock(mm);
+	}
 	pa -= gBaseDDRHw;
 	out[0] = lower_32_bits(pa);
 	out[1] = upper_32_bits(pa);
@@ -365,6 +399,8 @@ int MMUKernelMemNodeMap(u32 *p)
 	bool nov = size <= end;
 	int region, pid = task_tgid_nr(current);
 
+	if (!vdec_g_mmu || !vdec_g_mmu[10])
+		return -1;
 	mutex_lock_a1(mmu_lock());
 	if (nov && end < 0x40000000)
 		region = 0;
@@ -423,6 +459,8 @@ int MMUKernelMemNodeUnmap(u32 *p)
 	bool second = false;
 	u32 pa;
 
+	if (!vdec_g_mmu || !vdec_g_mmu[10])
+		return -4;
 	mutex_lock_a1(mmu_lock());
 	gm = vdec_g_mmu;
 	pa = p[0];
@@ -467,6 +505,8 @@ int MMUIoctl(int cmd, unsigned long file, void __user *arg, u32 *bases)
 	u32 a[3], phys[2] = { 0, 0 }, *node, *gm, i, pages, *b;
 	int pid = task_tgid_nr(current), region;
 
+	if (!vdec_g_mmu || !vdec_g_mmu[10])
+		return A1_MMU_ERR;
 	for (i = 0; i < 8; i++)
 		if (bases[i] && readl((void __iomem *)(bases[i] + 0x18)) >> 16 != 0x4d4d)
 			return A1_MMU_ERR;
@@ -577,28 +617,148 @@ out:
 	return 0;
 }
 
+#ifdef CONFIG_INGENIC_VDEC_SELFTEST
+/*
+ * /proc/vdec_a1_selftest drives the replaced MMU functions without Hantro MMU
+ * hardware: cmd 0 brings the firmware's MMU bookkeeping up on a fake register
+ * page, 1..3 are the MMU ioctls on the written user buffer, 4 resolves a
+ * virtual address, 5/6 are the kernel-memory map/unmap, 7 reads a page-table
+ * word. A read returns the last result. Run as root by the kit's gpatest.
+ */
+#include <linux/proc_fs.h>
+
+extern int MMUInit(u32 base);
+extern int MMUEnable(u32 *bases);
+
+static u32 st_bases[8];
+static unsigned long st_fake;
+static struct { int ret; u32 v[4]; } st_res;
+
+static ssize_t st_write(struct file *f, const char __user *buf, size_t n, loff_t *pos)
+{
+	u32 cmd, a[3], p[3];
+
+	if (n < 16 || copy_from_user(&cmd, buf, 4) || copy_from_user(a, buf + 4, 12))
+		return -EFAULT;
+	memset(&st_res, 0, sizeof(st_res));
+	switch (cmd) {
+	case 0:
+		if (vdec_g_mmu) {
+			st_res.ret = -EBUSY;
+			break;
+		}
+		st_fake = get_zeroed_page(GFP_KERNEL);
+		if (!st_fake)
+			return -ENOMEM;
+		((u32 *)st_fake)[6] = 0x4d4d0000;
+		st_bases[0] = st_fake;
+		st_res.ret = MMUInit(st_bases[0]);
+		if (!st_res.ret)
+			st_res.ret = MMUEnable(st_bases);
+		st_res.v[0] = vdec_g_mmu ? (u32)vdec_g_mmu[10] : 0;
+		break;
+	case 1:
+	case 2:
+	case 3:
+		st_res.ret = MMUIoctl(0xc0046d00 | cmd, 0, (void __user *)(buf + 4), st_bases);
+		break;
+	case 4:
+		st_res.ret = GetPhysicalAddress_a1(a[0], st_res.v);
+		break;
+	case 5:
+	case 6:
+		p[0] = a[0];
+		p[1] = 0;
+		p[2] = a[2];
+		st_res.ret = cmd == 5 ? MMUKernelMemNodeMap(p) : MMUKernelMemNodeUnmap(p);
+		st_res.v[0] = p[1];
+		break;
+	case 7:
+		st_res.v[0] = vdec_g_mmu ? ((u32 *)vdec_g_mmu[10])[a[0]] : 0xdead0000;
+		break;
+	}
+	return n;
+}
+
+static ssize_t st_read(struct file *f, char __user *buf, size_t n, loff_t *pos)
+{
+	char t[96];
+	int l = scnprintf(t, sizeof(t), "ret=%d v0=%08x v1=%08x v2=%08x v3=%08x\n",
+			  st_res.ret, st_res.v[0], st_res.v[1], st_res.v[2], st_res.v[3]);
+
+	return simple_read_from_buffer(buf, n, pos, t, l);
+}
+
+static const struct proc_ops st_ops = {
+	.proc_read = st_read, .proc_write = st_write, .proc_lseek = default_llseek,
+};
+
+static void st_create(void)
+{
+	proc_create("vdec_a1_selftest", 0600, NULL, &st_ops);
+}
+
+static void st_remove(void)
+{
+	remove_proc_entry("vdec_a1_selftest", NULL);
+}
+#else
+static void st_create(void) { }
+static void st_remove(void) { }
+#endif
+
+static struct clk *vdec_clk;
+
+/* the firmware only registers its own device: the gate and the MMU memory are ours to set up */
+static void a1_vdec_hw_setup(struct device_node *np)
+{
+	struct device_node *rn = of_parse_phandle(np, "memory-region", 0);
+	struct resource r;
+
+	vdec_clk = of_clk_get_by_name(np, "gate_vc8000d");
+	if (!IS_ERR(vdec_clk))
+		clk_prepare_enable(vdec_clk);
+	else
+		vdec_clk = NULL;
+	if (rn && !of_address_to_resource(rn, 0, &r)) {
+		mmu_pt_phys = r.start;
+		mmu_pt_size = resource_size(&r);
+		mmu_pt_virt = ioremap(mmu_pt_phys, mmu_pt_size);
+	}
+	of_node_put(rn);
+}
+
 static int __init vdec_a1_init(void)
 {
 	struct device_node *np = of_find_compatible_node(NULL, NULL, "ingenic,a1-vc8000d");
 	int virq = np ? irq_of_parse_and_map(np, 0) : 0;
 	int ret;
 
-	of_node_put(np);
 	if (virq <= 0) {
+		of_node_put(np);
 		pr_err("vdec: no interrupt in the device tree\n");
 		return -ENODEV;
 	}
 	vdec_virq = virq;
 	irq[0] = virq;
+	a1_vdec_hw_setup(np);
+	of_node_put(np);
 	ret = vdec_init();
 	if (ret)
 		pr_err("vdec: firmware init failed (%d)\n", ret);
+	else
+		st_create();
 	return ret;
 }
 
 static void __exit vdec_a1_exit(void)
 {
+	st_remove();
 	vdec_exit();
+	if (vdec_clk)
+		clk_disable_unprepare(vdec_clk);
+	if (mmu_pt_virt)
+		iounmap(mmu_pt_virt);
 	a1_procs_free();
 }
 

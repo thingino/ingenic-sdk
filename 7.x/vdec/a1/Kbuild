@@ -3,6 +3,7 @@
 # 4.4.94 kernel) plus the adapter that lets it run on Linux 7.x. The module
 # keeps the vendor's name: libimp's init scripts load "vdec".
 ccflags-y += -Wno-missing-prototypes -Wno-missing-declarations -Wno-unused-function
+ccflags-$(CONFIG_INGENIC_VDEC_SELFTEST) += -DCONFIG_INGENIC_VDEC_SELFTEST
 
 vdec-objs := vdec_a1_main.o vdec-fw.o
 obj-m += vdec.o
