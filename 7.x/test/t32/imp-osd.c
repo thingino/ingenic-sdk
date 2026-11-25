@@ -177,10 +177,10 @@ int main(int argc, char **argv)
 	}
 
 	memset(&si, 0, sizeof(si));
-	snprintf(si.name, sizeof(si.name), "sc4336p");
+	snprintf(si.name, sizeof(si.name), "%s", getenv("SENSOR") ? getenv("SENSOR") : "sc4336p");
 	si.cbus_type = TX_SENSOR_CONTROL_INTERFACE_I2C;
-	snprintf(si.i2c.type, sizeof(si.i2c.type), "sc4336p");
-	si.i2c.addr = 0x30;
+	snprintf(si.i2c.type, sizeof(si.i2c.type), "%s", si.name);
+	si.i2c.addr = getenv("I2CADDR") ? strtol(getenv("I2CADDR"), NULL, 0) : 0x30;
 	si.rst_gpio = si.pwdn_gpio = si.power_gpio = si.switch_gpio = -1;
 	si.video_interface = IMPISP_SENSOR_VI_MIPI_CSI0;
 	si.mclk = IMPISP_SENSOR_MCLK0;
