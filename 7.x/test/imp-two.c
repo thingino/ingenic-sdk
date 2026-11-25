@@ -10,7 +10,7 @@
  * Like a streamer, it reads the sensor size from /proc/jz/sensor and only
  * enables the frame source scaler on a channel smaller than the sensor; with
  * the files missing the sub channel gets no scaler and EnableChn(1) fails.
- * Build flags: -DIMP_API2 for the 2.x libimp (T31, T32, T33: IMPVI_MAIN
+ * Build flags: -DIMP_API_T41 for the T41 1.2.6 libimp, -DIMP_API2 for the 2.x libimp (T31, T32, T33: IMPVI_MAIN
  * sensor calls, IMP_Encoder_SetDefaultParam), -DIMP_ENC_AVC_AUTO for the
  * T21/T23 encoder attributes (profile -1 and a stream buffer size).
  * IMP_SENSOR, IMP_ADDR pick the sensor; IMP_W and IMP_H its size when the
@@ -34,6 +34,13 @@
 
 static const char *envs(const char *n, const char *d) { const char *v = getenv(n); return v ? v : d; }
 static int envi(const char *n, int d) { const char *v = getenv(n); return v ? (int)strtol(v, NULL, 0) : d; }
+
+#ifdef IMP_API_T41
+#define IMP_API2
+/* the T41 1.2.6 libimp spells these differently and its sensor info has no fps or switch pin */
+#define IMPEncoderCHNAttr IMPEncoderChnAttr
+#define ENC_RC_MODE_FIXQP IMP_ENC_RC_MODE_FIXQP
+#endif
 
 #ifndef IMP_API2
 extern int IMP_Encoder_SetPoolSize(int size);
@@ -153,11 +160,14 @@ int main(int argc, char **argv)
 	si.i2c.addr = envi("IMP_ADDR", 0x40);
 
 #ifdef IMP_API2
-	si.rst_gpio = si.pwdn_gpio = si.power_gpio = si.switch_gpio = -1;
-	si.video_interface = IMPISP_SENSOR_VI_MIPI_CSI0;
-	si.mclk = IMPISP_SENSOR_MCLK0;
+	si.rst_gpio = si.pwdn_gpio = si.power_gpio = -1;
+#ifndef IMP_API_T41
+	si.switch_gpio = -1;
 	si.fps.num = 25;
 	si.fps.den = 1;
+#endif
+	si.video_interface = IMPISP_SENSOR_VI_MIPI_CSI0;
+	si.mclk = IMPISP_SENSOR_MCLK0;
 	STEP(IMP_ISP_Open());
 	STEP(IMP_ISP_AddSensor(IMPVI_MAIN, &si));
 	STEP(IMP_ISP_EnableSensor(IMPVI_MAIN, &si));
