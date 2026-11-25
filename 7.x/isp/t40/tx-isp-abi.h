@@ -88,6 +88,8 @@ signed long t40_schedule_timeout_44(signed long timeout);
 
 char *t40_strncpy(char *dst, const char *src, size_t n);
 void t40_arch_sync_dma_for_device(phys_addr_t paddr, size_t size, enum dma_data_direction dir);
+void t40_dma_sync_single_for_cpu(struct device *dev, dma_addr_t addr, size_t size,
+				 enum dma_data_direction dir);
 void t40_dma_sync_single_for_device(struct device *dev, dma_addr_t addr, size_t size,
 				    enum dma_data_direction dir);
 void private_dma_sync_single_for_device(struct device *dev, dma_addr_t addr, size_t size,

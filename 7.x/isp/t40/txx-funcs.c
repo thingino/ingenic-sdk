@@ -412,6 +412,13 @@ void t40_dma_sync_single_for_device(struct device *dev, dma_addr_t addr, size_t 
 	t40_sync(dev, addr, size, dir);
 }
 
+void t40_dma_sync_single_for_cpu(struct device *dev, dma_addr_t addr, size_t size,
+				 enum dma_data_direction dir)
+{
+	if (dir != DMA_TO_DEVICE)
+		t40_sync(dev, addr, size, dir);
+}
+
 /* the kernel-side encoder entry the firmware calls only with zeratul_open set */
 int VPU_Encoder_SendFrame(int chn, void *frame)
 {
