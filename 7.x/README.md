@@ -63,7 +63,8 @@ Layout: `isp/<soc>`, `vpu/<soc>`, `avpu/t31`, `sensor-src/<soc>` per SoC;
 `ipu`, `rmem`, `logger` shared by all; `audio/oss2` shared by the T10, T20,
 T21 and T30; `audio/oss3/t23`, `audio/oss3/t31`, `audio/oss3/t32`, `audio/oss3/t40`, `audio/oss3/t41` and `audio/oss3/a1` (different vendor driver
 releases with different ioctl sets); `audio/oss3/t33` uses the T32's dsp core
-with its own AIC and codec.
+with its own AIC and codec. `audio/hdmi_audio/a1` is the A1's HDMI audio output
+(`hdmi_audio.ko`, AIC1 into the HDMI transmitter, `/dev/dsp_hdmi_audio`).
 
 ## Verified on hardware
 

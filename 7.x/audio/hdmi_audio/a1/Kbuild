@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# hdmi_audio.ko: A1 AIC1 into the HDMI transmitter, /dev/dsp_hdmi_audio (SDK 1.7.0)
+hdmi_audio-objs := \
+	hdmi_dsp.o \
+	hdmi_audio_debug.o
+
+obj-m += hdmi_audio.o

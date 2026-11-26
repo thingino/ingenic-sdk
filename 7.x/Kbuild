@@ -16,6 +16,7 @@
 #   CONFIG_INGENIC_AVPU    avpu.ko (t31 and t41 only)
 #   CONFIG_INGENIC_IPU     ipu-<soc>.ko (ipu.ko on t31), libimp OSD
 #   CONFIG_INGENIC_AUDIO   audio.ko, oss2 or oss3 (CONFIG_INGENIC_AUDIO_VARIANT)
+#   CONFIG_INGENIC_HDMI_AUDIO  hdmi_audio.ko (a1 only), /dev/dsp_hdmi_audio
 #   CONFIG_INGENIC_FB      fb.ko (a1 only)
 #   CONFIG_INGENIC_VDEC    vdec.ko (a1 only)
 #   CONFIG_INGENIC_VO      vo.ko (a1 only)
@@ -44,6 +45,7 @@ CONFIG_INGENIC_AVPU          ?= $(if $(is_t31)$(is_t40)$(is_t41),y,n)
 CONFIG_INGENIC_IPU           ?= $(if $(is_t40)$(is_t41),n,y)
 CONFIG_INGENIC_AUDIO         ?= y
 CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31 t32 t33 t40 t41 a1,$(soc)),oss3,oss2)
+CONFIG_INGENIC_HDMI_AUDIO    ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_AIP           ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_VO            ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_VDEC          ?= $(if $(is_a1),y,n)
@@ -79,6 +81,10 @@ ifeq ($(CONFIG_INGENIC_AUDIO),y)
     else
         obj-m += 7.x/audio/oss3/$(soc)/
     endif
+endif
+
+ifeq ($(CONFIG_INGENIC_HDMI_AUDIO),y)
+    obj-m += 7.x/audio/hdmi_audio/a1/
 endif
 
 ifeq ($(CONFIG_INGENIC_VDEC),y)
