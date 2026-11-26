@@ -20,6 +20,7 @@
 #include <linux/dmaengine.h>
 #include "include/audio_dsp.h"
 #include "include/audio_debug.h"
+#include "include/audio_dmic.h"
 
 /*
  * BSP exposed dma_device->get_current_trans_addr to query the current DMA
@@ -2170,7 +2171,6 @@ int register_audio_debug_ops(char *name, const struct proc_ops *debug_ops, void 
 }
 
 extern struct platform_driver audio_aic_driver;
-extern struct platform_driver audio_dmic_driver;
 
 static int audio_dsp_probe(struct platform_device *pdev)
 {
@@ -2222,7 +2222,7 @@ static int audio_dsp_probe(struct platform_device *pdev)
 	if (aic_enable)
 		platform_driver_register(&audio_aic_driver);
 	if (dmic_enable)
-		platform_driver_register(&audio_dmic_driver);
+		audio_dmic_register();
 
 	if (!dspdev->routes[AUDIO_ROUTE_AMIC_ID].pipe &&
 	    !dspdev->routes[AUDIO_ROUTE_SPK_ID].pipe) {
@@ -2243,7 +2243,7 @@ failed_no_route:
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
 	if (dmic_enable)
-		platform_driver_unregister(&audio_dmic_driver);
+		audio_dmic_unregister();
 	globe_dspdev = NULL;
 	proc_remove(dspdev->proc);
 failed_to_proc:
@@ -2263,7 +2263,7 @@ static void audio_dsp_remove(struct platform_device *pdev)
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
 	if (dmic_enable)
-		platform_driver_unregister(&audio_dmic_driver);
+		audio_dmic_unregister();
 
 	hrtimer_cancel(&dspdev->hr_timer);
 	cancel_work_sync(&dspdev->workqueue);
