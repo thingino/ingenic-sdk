@@ -1577,6 +1577,8 @@ static int dsp_open(struct inode *inode, struct file *file)
 		if (index == AUDIO_ROUTE_DMIC_ID && dmic_enable == 0)
 			continue;
 		route = &(dsp->routes[index]);
+		if (!route->pipe)
+			continue;
 		if(route && route->state == AUDIO_IDLE_STATE){
 			if(route->pipe && route->pipe->init)
 				ret = route->pipe->init(route);

@@ -1202,6 +1202,8 @@ static int dsp_open(struct inode *inode, struct file *file)
 		}
 #endif
 		route = &(dsp->routes[index]);
+		if (!route->pipe)
+			continue;
 		if(route && route->state == AUDIO_IDLE_STATE){
 			if(route->pipe && route->pipe->init)
 				ret = route->pipe->init(route);
