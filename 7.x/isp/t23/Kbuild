@@ -10,16 +10,17 @@ ccflags-y += -I$(src)/include -I$(src)
 ccflags-y += -Wno-unused-function
 
 tx-isp-t23-objs := tx-isp-module.o tx-isp-debug.o tx-isp-abi.o txx-funcs.o \
-		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fw.o
+		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fw.o \
+		   tx-isp-fwc.o
 
 obj-m += tx-isp-t23.o
 
 ifdef CONFIG_MULTI_SENSOR
 ccflags-y += -DCONFIG_MULTI_SENSOR
-tx-isp-t23-objs += tx-isp-fwc-ulimit.o
+tx-isp-t23-objs += tx-isp-fwc-tun-ms.o
 T23_FW := sdk/libt23-firmware-double.fw
 else
-tx-isp-t23-objs += tx-isp-fwc.o tx-isp-fwc-tun.o
+tx-isp-t23-objs += tx-isp-fwc-tun.o
 T23_FW := sdk/libt23-firmware.fw
 endif
 
@@ -52,17 +53,27 @@ T23_REDEF := \
 	--redefine-sym __div64_32=t23_div64_32_44 \
 	--globalize-symbol=tevent_info
 
-# tx-isp-fwc.c and tx-isp-fwc-tun.c take over the five firmware functions that
-# read addr_limit through $gp, and the one that calls the biggest of them. The
-# firmware's own copies are renamed t23fw_* and made global so the slot checks
-# can name them; the firmware's local data, tables and helpers the C code uses
-# are made global.
+# tx-isp-fwc.c and tx-isp-fwc-tun.c (tx-isp-fwc-tun-ms.c for the multi-sensor
+# firmware) take over the five firmware functions that read addr_limit through
+# $gp, and the one that calls the biggest of them. The firmware's own copies
+# are renamed t23fw_* and made global so the slot checks can name them; the
+# firmware's local data, tables and helpers the C code uses are made global.
 T23_FWC_FUNCS := tisp_vic_ctrl_ioctl video_input_cmd_set isp_tunning_read \
 	tisp_code_tuning_ioctl isp_core_tunning_unlocked_ioctl
 T23_FWC_SHARED := isp_vic_frd_fops video_input_cmd_fops isp_core_tunning_fops \
 	st_vic_save_par vaddr video_input_cmd_buf tisp_par_ioctl \
-	apical_isp_core_ops_s_ctrl \
-	apical_isp_awb_zone_statis_g_attr.isra.97 apical_isp_awb_zone_weight_g_attr.isra.115 \
+	apical_isp_core_ops_s_ctrl
+ifdef CONFIG_MULTI_SENSOR
+T23_FWC_SHARED += apical_isp_mask_g_attr.isra.75 apical_isp_expr_g_ctrl.isra.79 \
+	apical_isp_max_again_g_ctrl.isra.80 apical_isp_max_dgain_g_ctrl.isra.81 \
+	apical_isp_ev_g_attr.isra.82 apical_isp_gamma_g_attr.isra.83 apical_isp_ae_g_roi.isra.84 \
+	apical_isp_ae_zone_g_ctrl.isra.90 apical_isp_af_zone_g_ctrl.isra.91 \
+	apical_isp_ae_zone_weight_g_attr.isra.95 apical_isp_ae_hist_origin_g_attr.isra.98 \
+	apical_isp_awb_zone_statis_g_attr.isra.100 apical_isp_af_hist_g_attr.isra.101 \
+	apical_isp_af_weight_g_attr.isra.102 tiziano_isp_ae_manual_attr_g_ctrl.isra.108 \
+	tiziano_isp_csc_g_attr.isra.113
+else
+T23_FWC_SHARED += apical_isp_awb_zone_statis_g_attr.isra.97 apical_isp_awb_zone_weight_g_attr.isra.115 \
 	apical_isp_ae_g_roi.isra.80 apical_isp_expr_g_ctrl.isra.75 apical_isp_ev_g_attr.isra.78 \
 	apical_isp_ae_zone_weight_g_attr.isra.92 apical_isp_ae_zone_g_ctrl.isra.87 \
 	apical_isp_ae_hist_origin_g_attr.isra.95 apical_isp_max_dgain_g_ctrl.isra.77 \
@@ -70,6 +81,7 @@ T23_FWC_SHARED := isp_vic_frd_fops video_input_cmd_fops isp_core_tunning_fops \
 	apical_isp_af_hist_g_attr.isra.98 tiziano_isp_ae_manual_attr_g_ctrl.isra.106 \
 	apical_isp_af_weight_g_attr.isra.99 apical_isp_af_zone_g_ctrl.isra.88 \
 	apical_isp_autozoom_g_attr.isra.71
+endif
 T23_REDEF += $(foreach f,$(T23_FWC_FUNCS),--redefine-sym $(f)=t23fw_$(f) --globalize-symbol=t23fw_$(f)) \
 	     $(foreach f,$(T23_FWC_SHARED),--globalize-symbol=$(f))
 

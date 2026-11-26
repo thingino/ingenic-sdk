@@ -11,6 +11,10 @@
  * are C instead, using copy_{from,to}_user(). The firmware's own copies are
  * renamed t23fw_* by the Kbuild so the slot checks can name them.
  *
+ * The multi-sensor build (CONFIG_MULTI_SENSOR) has the same five, compiled
+ * from its own code: the vic ioctl and video-input-cmd differences are
+ * here, its tuning functions are tx-isp-fwc-tun-ms.c.
+ *
  * Like the firmware's own handlers they take the 4.4-shaped file twin
  * tx-isp-twin.c builds (private_data at 120, f_flags at 28) and, for the
  * /proc files, the seq twin behind it (private at 72). They replace the
@@ -99,6 +103,12 @@ static ssize_t fwc_isp_tunning_read(void *twin, char __user *buf, size_t count,
 #define VPAR_FREE_FLAG		30
 #define VPAR_CMD		36
 #define VPAR_BYTES		40
+#ifdef CONFIG_MULTI_SENSOR
+#define VIC_DONE_MS		0x15c
+#define VIC_CMD_ERR_LINE	2141
+#else
+#define VIC_CMD_ERR_LINE	1724
+#endif
 
 #define VIC_IOC_GET		0x20007600
 #define VIC_IOC_SET		0x20007601
@@ -148,7 +158,9 @@ static long fwc_tisp_vic_ctrl_ioctl(void *twin, unsigned int cmd, unsigned long 
 		isp_printf(2, "get ioctl par copy_to_user error!!!\n");
 		return -EFAULT;
 	}
+#ifndef CONFIG_MULTI_SENSOR
 	printk("mem mode is %d, vic cmd is %d \n", par[VPAR_MEMMODE], FW(par, VPAR_CMD, u32));
+#endif
 
 	switch (FW(par, VPAR_CMD, u32)) {
 	case VIC_CMD_IDLE:
@@ -180,12 +192,20 @@ static long fwc_tisp_vic_ctrl_ioctl(void *twin, unsigned int cmd, unsigned long 
 	case VIC_CMD_MDMA:
 		if (!vic)
 			return -EINVAL;
+#ifdef CONFIG_MULTI_SENSOR
+		isp_printf(1, "mem mode is %d, paddr is 0x%08x \n", par[VPAR_MEMMODE],
+			   FW(par, VPAR_ADDR, u32));
+		vic_mdma_enable(vic, 0, 0, 1, FW(par, VPAR_ADDR, u32), 0);
+		private_wait_for_completion_interruptible(vic + VIC_DONE_MS);
+#else
 		printk("mdns paddr is 0x%08x \n", FW(par, VPAR_ADDR, u32));
 		vic_mdma_enable(vic, 0, 0, 1, FW(par, VPAR_ADDR, u32), 0);
 		private_wait_for_completion_interruptible(vic + VIC_DONE);
+#endif
 		break;
 	default:
-		isp_printf(1, "[%s, %d]: vic cmd error !!!\n", "tisp_vic_cmd_process", 1724);
+		isp_printf(1, "[%s, %d]: vic cmd error !!!\n", "tisp_vic_cmd_process",
+			   VIC_CMD_ERR_LINE);
 		return -1;
 	}
 	FW(par, VPAR_CMD, u32) = 0;
@@ -209,6 +229,19 @@ static long fwc_tisp_vic_ctrl_ioctl(void *twin, unsigned int cmd, unsigned long 
 #define CORE_REG_WRITE		0x18
 
 
+/* the firmware's struct tx_isp_dbg_register: name, then u64 reg and val */
+#ifdef CONFIG_MULTI_SENSOR
+struct fw_sensor_op {
+	void *client;
+	u32 sensor_id;
+	u32 size;
+	u32 rsvd0;
+	u32 reg;
+	u32 reg_hi;
+	u32 val;
+	u32 val_hi;
+};
+#else
 struct fw_sensor_op {
 	void *client;
 	u32 rsvd0;
@@ -217,6 +250,7 @@ struct fw_sensor_op {
 	u32 val;
 	u32 rsvd1;
 };
+#endif
 
 typedef int (*fw_core_op)(void *sd, struct fw_sensor_op *op);
 
@@ -236,6 +270,135 @@ static void vin_run(u8 *sd, int off, struct fw_sensor_op *op, int line)
 		isp_printf(2, "##### err %s.%d\n", "video_input_cmd_set", line);
 }
 
+#ifdef CONFIG_MULTI_SENSOR
+/*
+ * The multi-sensor build reads and writes a given sensor's registers as
+ * well: "r sen_reg1"/"w sen_reg1" go to the sensor at active +0xec,
+ * "r sen_reg2"/"w sen_reg2" to the one at +0xf0, their value text at +11.
+ * The plain commands keep going to the active sensor.
+ *
+ * Up to 128 bytes land in the firmware's static buffer unterminated, so a
+ * short command's values are parsed from what is left there from earlier
+ * ones, and reading the node shows the old text after the new: both kept.
+ * The parse runs on a terminated copy of that buffer so it cannot run off
+ * its end.
+ */
+#define VIN_SENSOR(n)		(0xec + 4 * ((n) - 1))
+#define VIN_STATIC		sizeof(video_input_cmd_buf)
+
+static void vin_read(void *seq, u8 *sd, const char *arg, int line)
+{
+	struct fw_sensor_op op = {};
+
+	op.client = sd + SD_CLIENT;
+	op.reg = simple_strtoull(arg, NULL, 0);
+	if (!sd)
+		isp_printf(2, "##### err %s.%d\n", "video_input_cmd_set", line);
+	else
+		vin_run(sd, CORE_REG_READ, &op, line);
+	private_seq_printf(seq, "isp: sensor reg read 0x%x(0x%x)\n", op.reg, op.val);
+	sprintf(video_input_cmd_buf, "0x%x\n", op.val);
+}
+
+static void vin_write(void *seq, u8 *sd, char *arg)
+{
+	struct fw_sensor_op op = {};
+	fw_core_op fn = NULL;
+	char *end = NULL;
+
+	op.reg = simple_strtoull(arg, &end, 0);
+	/* one past the end of the register text, as the firmware does */
+	op.val = simple_strtoull(end + 1, NULL, 0);
+	private_seq_printf(seq, "isp: sensor reg write 0x%x(0x%x)\n", op.reg, op.val);
+	op.client = sd + SD_CLIENT;
+	if (sd)
+		fn = fw_core_fn(sd, CORE_REG_WRITE);
+	sprintf(video_input_cmd_buf, "%s\n", fn && !fn(sd, &op) ? "ok" : "failed");
+}
+
+/*
+ * The firmware's copy-in: a range outside user space clears the buffer, a
+ * fault partway keeps what was copied before it.
+ */
+static int vin_copy_in(char *dst, const char __user *ubuf, size_t count)
+{
+	char *tmp;
+	size_t left;
+
+	if (!access_ok(ubuf, count)) {
+		memset(dst, 0, count);
+		return -EFAULT;
+	}
+	tmp = kmalloc(count, GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
+	left = copy_from_user(tmp, ubuf, count);
+	memcpy(dst, tmp, count - left);
+	kfree(tmp);
+	return left ? -EFAULT : 0;
+}
+
+static ssize_t fwc_video_input_cmd_set(void *twin, const char __user *ubuf,
+				       size_t count, loff_t *ppos)
+{
+	void *seq = TWIN_PRIV(twin);
+	void *vin = FW(seq, SEQ44_PRIVATE, void *);
+	bool small = count <= VIN_STATIC;
+	struct fw_sensor_op op = {};
+	u8 *active = NULL;
+	u8 *sd = NULL;
+	char *buf;
+	ssize_t ret = count;
+
+	if (!IS_ERR_OR_NULL(vin)) {
+		active = FW(vin, VIN_ACTIVE, u8 *);
+		if (!IS_ERR_OR_NULL(active))
+			sd = FW(active, VIN_ACTIVE_SD, u8 *);
+	}
+	if (IS_ERR_OR_NULL(sd))
+		return private_seq_printf(seq,
+					  "don't have active sensor, please set sensor firstly!\n");
+
+	/* two terminators: "w sen_reg" parses one past the end of its text */
+	buf = kzalloc((small ? VIN_STATIC : count) + 2, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+	if (small) {
+		ret = vin_copy_in(video_input_cmd_buf, ubuf, count);
+		memcpy(buf, video_input_cmd_buf, VIN_STATIC);
+	} else if (copy_from_user(buf, ubuf, count)) {
+		ret = -EFAULT;
+	}
+	if (ret < 0)
+		goto out;
+	ret = count;
+
+	op.client = sd + SD_CLIENT;
+	if (!strncmp(buf, "r sen_reg1", 10)) {
+		vin_read(seq, FW(active, VIN_SENSOR(1), u8 *), buf + 11, 748);
+	} else if (!strncmp(buf, "w sen_reg1", 10)) {
+		vin_write(seq, FW(active, VIN_SENSOR(1), u8 *), buf + 11);
+	} else if (!strncmp(buf, "w sen_reg2", 10)) {
+		vin_write(seq, FW(active, VIN_SENSOR(2), u8 *), buf + 11);
+	} else if (!strncmp(buf, "r sen_reg2", 10)) {
+		vin_read(seq, FW(active, VIN_SENSOR(2), u8 *), buf + 11, 797);
+	} else if (!strncmp(buf, "r sen_reg", 9)) {
+		vin_read(seq, sd, buf + 10, 810);
+	} else if (!strncmp(buf, "r list", 6)) {
+		vin_run(sd, CORE_REG_LIST, &op, 820);
+	} else if (!strncmp(buf, "r all", 5)) {
+		vin_run(sd, CORE_REG_ALL, &op, 827);
+	} else if (!strncmp(buf, "w sen_reg", 9)) {
+		vin_write(seq, sd, buf + 10);
+	} else {
+		sprintf(video_input_cmd_buf, "null");
+	}
+out:
+	kfree(buf);
+	return ret;
+}
+
+#else
 static ssize_t fwc_video_input_cmd_set(void *twin, const char __user *ubuf,
 				       size_t count, loff_t *ppos)
 {
@@ -299,6 +462,7 @@ out:
 		kfree(buf);
 	return ret;
 }
+#endif
 
 /* ---- install --------------------------------------------------------------- */
 
