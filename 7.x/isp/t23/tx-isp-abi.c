@@ -495,8 +495,77 @@ static void priv_iounmap(const volatile void __iomem *addr)
 	iounmap(addr);
 }
 
+/*
+ * The firmware requests a line, enabled, and disables it right after
+ * (tx_isp_request_irq), before the subdev's private data is set. A line
+ * still asserted by the previous load of the module (the IVDC's status
+ * stays raised and enabled when the ISP stops) runs the new handler in
+ * that window, and it oopses on the NULL private data. The line is
+ * requested disabled here, and the firmware's own disable that follows is
+ * dropped, which leaves the depth where the firmware expects it.
+ */
+#define T23_IRQ_FRESH	8
+
+static unsigned int t23_irq_fresh[T23_IRQ_FRESH];
+static DEFINE_SPINLOCK(t23_irq_fresh_lock);
+
+static int priv_request_threaded_irq(unsigned int irq, irq_handler_t handler,
+				     irq_handler_t thread_fn, unsigned long flags,
+				     const char *name, void *dev)
+{
+	unsigned long lf;
+	int i, ret;
+
+	ret = request_threaded_irq(irq, handler, thread_fn, flags | IRQF_NO_AUTOEN, name, dev);
+	if (ret)
+		return ret;
+	spin_lock_irqsave(&t23_irq_fresh_lock, lf);
+	for (i = 0; i < T23_IRQ_FRESH; i++) {
+		if (!t23_irq_fresh[i]) {
+			t23_irq_fresh[i] = irq;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&t23_irq_fresh_lock, lf);
+	/* no slot: let it run, as the firmware asked */
+	if (i == T23_IRQ_FRESH)
+		enable_irq(irq);
+	return 0;
+}
+
+static bool t23_irq_fresh_take(unsigned int irq)
+{
+	unsigned long lf;
+	bool fresh = false;
+	int i;
+
+	spin_lock_irqsave(&t23_irq_fresh_lock, lf);
+	for (i = 0; i < T23_IRQ_FRESH; i++) {
+		if (t23_irq_fresh[i] == irq) {
+			t23_irq_fresh[i] = 0;
+			fresh = true;
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&t23_irq_fresh_lock, lf);
+	return fresh;
+}
+
+static void priv_disable_irq(unsigned int irq)
+{
+	if (!t23_irq_fresh_take(irq))
+		disable_irq(irq);
+}
+
+static void priv_enable_irq(unsigned int irq)
+{
+	t23_irq_fresh_take(irq);
+	enable_irq(irq);
+}
+
 static void priv_free_irq(unsigned int irq, void *dev_id)
 {
+	t23_irq_fresh_take(irq);
 	free_irq(irq, dev_id);
 }
 
@@ -1154,9 +1223,9 @@ static struct jz_driver_common_interfaces private_funcs = {
 	.priv_iounmap = priv_iounmap,
 
 	/* interrupt interface */
-	.priv_request_threaded_irq = request_threaded_irq,
-	.priv_enable_irq = enable_irq,
-	.priv_disable_irq = disable_irq,
+	.priv_request_threaded_irq = priv_request_threaded_irq,
+	.priv_enable_irq = priv_enable_irq,
+	.priv_disable_irq = priv_disable_irq,
 	.priv_free_irq = priv_free_irq,
 
 	/* lock and mutex interface */
