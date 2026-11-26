@@ -766,6 +766,10 @@ struct a1_misc {
 
 static struct a1_misc *a1_misc_twin;
 
+/* a driver may react around the firmware's open and release (first open, last close) */
+static void (*a1_open_post_hook)(void);
+static void (*a1_release_pre_hook)(void);
+
 /*
  * One 4.4 file stand-in per open file, kept in the real file's private_data:
  * the firmware stores its per-open state in file->private_data@136 at open
@@ -781,10 +785,13 @@ static int a1_misc_open(struct inode *inode, struct file *file)
 	f->private_data = a1_misc_twin->blob;
 	if (a1_misc_twin->blob_open)
 		ret = a1_misc_twin->blob_open(inode, f);
-	if (ret)
+	if (ret) {
 		kfree(f);
-	else
+	} else {
 		file->private_data = f;
+		if (a1_open_post_hook)
+			a1_open_post_hook();
+	}
 	return ret;
 }
 
@@ -793,6 +800,8 @@ static int a1_misc_release(struct inode *inode, struct file *file)
 	struct a1_file44 *f = file->private_data;
 	int ret = 0;
 
+	if (a1_release_pre_hook)
+		a1_release_pre_hook();
 	if (a1_misc_twin->blob_release)
 		ret = a1_misc_twin->blob_release(inode, f);
 	kfree(f);

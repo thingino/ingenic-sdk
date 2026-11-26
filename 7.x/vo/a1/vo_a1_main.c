@@ -294,9 +294,53 @@ static void vo_irq_pre(unsigned int irq)
 	}
 }
 
+/*
+ * While the firmware tears the display down (last close of /dev/vde: timing
+ * generator, clocks and interface off) the VDE interrupt enables are left on
+ * and the frame interrupt can re-assert faster than it is acknowledged. The
+ * enable words are cleared before the last release runs and put back by the
+ * next open.
+ */
+static int vde_mask_release = 1;
+module_param(vde_mask_release, int, 0644);
+MODULE_PARM_DESC(vde_mask_release, "mask the VDE interrupt enables during the last release");
+
+static unsigned int vo_opens;
+static u32 vo_saved_en[2];
+static bool vo_saved;
+
+static void vo_release_pre(void)
+{
+	void __iomem *v = (void __iomem *)(0xa0000000 | 0x13360000);
+
+	if (vo_opens && --vo_opens)
+		return;
+	if (!vde_mask_release)
+		return;
+	vo_saved_en[0] = readl(v + 0x20);
+	vo_saved_en[1] = readl(v + 0x30);
+	vo_saved = true;
+	writel(0, v + 0x20);
+	writel(0, v + 0x30);
+}
+
+static void vo_open_post(void)
+{
+	void __iomem *v = (void __iomem *)(0xa0000000 | 0x13360000);
+
+	vo_opens++;
+	if (!vo_saved)
+		return;
+	vo_saved = false;
+	writel(vo_saved_en[0], v + 0x20);
+	writel(vo_saved_en[1], v + 0x30);
+}
+
 static int __init vo_a1_init(void)
 {
 	a1_irq_pre_hook = vo_irq_pre;
+	a1_open_post_hook = vo_open_post;
+	a1_release_pre_hook = vo_release_pre;
 	a1_storm_hook = vo_storm_dump;
 	return ingenic_vde_init();
 }
