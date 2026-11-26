@@ -37,3 +37,5 @@ $(obj)/fb-fw.o: $(src)/$(FB_FW) FORCE
 	$(call if_changed,fbfw)
 
 targets += fb-fw.o
+
+ccflags-$(CONFIG_INGENIC_VO_TRACE) += -DCONFIG_INGENIC_VO_TRACE

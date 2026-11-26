@@ -258,41 +258,70 @@ static void vo_storm_dump(unsigned int irq)
 	}
 }
 
+#ifdef CONFIG_INGENIC_VO_TRACE
 /*
- * The display error interrupts (bits 4..12 of the second status word: under
- * flow, unpack errors) stay asserted while the condition lasts, once per line:
- * the firmware acknowledges each one and the next arrives at once. They are
- * enabled when a graphic layer is shown. Past 64 interrupts in a second the
- * error bits are masked in the interrupt enable word (the frame interrupts in
- * the first word keep running) and the status that caused it is reported.
+ * Debug only: a per second histogram of the VDE status bits. Reading the status
+ * words before the firmware's own handler loses events (the frame hand-off to
+ * libimp stalls after the first frame), so the reads are off unless
+ * vde_pre_reads is set; the interrupts are always counted.
  */
-#define VDE_ERR_BITS	0x1ff0
+static int vde_pre_reads;
+module_param(vde_pre_reads, int, 0644);
+MODULE_PARM_DESC(vde_pre_reads, "read the VDE status words first (loses events)");
+static unsigned int vde_irq_total;
+module_param_named(vde_irq_total, vde_irq_total, uint, 0444);
+MODULE_PARM_DESC(vde_irq_total, "VDE interrupts seen");
+
+static void vo_trace(u32 a, u32 b, void __iomem *v)
+{
+	static unsigned long win;
+	static unsigned int tot, ha[32], hb[32], sa[8], sb[8];
+	char t[200];
+	int i, l = 0;
+
+	if (time_after(jiffies, win + HZ)) {
+		if (tot > 100) {
+			for (i = 0; i < 32; i++)
+				if (ha[i])
+					l += scnprintf(t + l, sizeof(t) - l, " A%d:%u", i, ha[i]);
+			for (i = 0; i < 32 && l < (int)sizeof(t) - 12; i++)
+				if (hb[i])
+					l += scnprintf(t + l, sizeof(t) - l, " B%d:%u", i, hb[i]);
+			pr_info("vo: trace 1s total %u%s | first (a,b): %x,%x %x,%x %x,%x %x,%x\n",
+				tot, t, sa[0], sb[0], sa[1], sb[1], sa[2], sb[2], sa[3], sb[3]);
+			pr_info("vo: trace enable A %08x B %08x ctl %08x\n",
+				readl(v + 0x20), readl(v + 0x30), readl(v));
+		}
+		win = jiffies;
+		tot = 0;
+		memset(ha, 0, sizeof(ha));
+		memset(hb, 0, sizeof(hb));
+	}
+	if (tot < ARRAY_SIZE(sa)) {
+		sa[tot] = a;
+		sb[tot] = b;
+	}
+	tot++;
+	for (i = 0; i < 32; i++) {
+		if (a & BIT(i))
+			ha[i]++;
+		if (b & BIT(i))
+			hb[i]++;
+	}
+}
 
 static void vo_irq_pre(unsigned int irq)
 {
-	static unsigned long win;
-	static unsigned int n;
 	void __iomem *v = (void __iomem *)(0xa0000000 | 0x13360000);
 	struct irq_data *d = irq_get_irq_data(irq);
-	u32 a, b;
 
 	if (!d || irqd_to_hwirq(d) != 20)
 		return;
-	if (time_after(jiffies, win + HZ)) {
-		win = jiffies;
-		n = 0;
-	}
-	if (++n != 64)
-		return;
-	a = readl(v + 0x28);
-	b = readl(v + 0x38);
-	pr_info("vo: vde interrupt rate high: status A %08x B %08x, enable A %08x B %08x\n",
-		a, b, readl(v + 0x20), readl(v + 0x30));
-	if (b & VDE_ERR_BITS) {
-		writel(readl(v + 0x30) & ~VDE_ERR_BITS, v + 0x30);
-		pr_warn("vo: vde error interrupts %#x asserting continuously, masked\n", b & VDE_ERR_BITS);
-	}
+	vde_irq_total++;
+	if (vde_pre_reads)
+		vo_trace(readl(v + 0x28), readl(v + 0x38), v);
 }
+#endif
 
 /*
  * While the firmware tears the display down (last close of /dev/vde: timing
@@ -322,6 +351,10 @@ static void vo_release_pre(void)
 	vo_saved = true;
 	writel(0, v + 0x20);
 	writel(0, v + 0x30);
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("vo: last release, interrupt enables %08x %08x cleared\n",
+		vo_saved_en[0], vo_saved_en[1]);
+#endif
 }
 
 static void vo_open_post(void)
@@ -334,11 +367,17 @@ static void vo_open_post(void)
 	vo_saved = false;
 	writel(vo_saved_en[0], v + 0x20);
 	writel(vo_saved_en[1], v + 0x30);
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("vo: open, interrupt enables %08x %08x restored\n",
+		vo_saved_en[0], vo_saved_en[1]);
+#endif
 }
 
 static int __init vo_a1_init(void)
 {
+#ifdef CONFIG_INGENIC_VO_TRACE
 	a1_irq_pre_hook = vo_irq_pre;
+#endif
 	a1_open_post_hook = vo_open_post;
 	a1_release_pre_hook = vo_release_pre;
 	a1_storm_hook = vo_storm_dump;

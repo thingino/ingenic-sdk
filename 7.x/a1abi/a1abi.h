@@ -368,11 +368,17 @@ int private_request_irq(unsigned int irq, irq_handler_t handler, unsigned long f
 
 void private_enable_irq(unsigned int irq)
 {
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("a1: enable_irq %u pid %d\n", irq, current->pid);
+#endif
 	enable_irq(A1_IRQ_XLATE(irq));
 }
 
 void private_disable_irq(unsigned int irq)
 {
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("a1: disable_irq %u pid %d\n", irq, current->pid);
+#endif
 	disable_irq(A1_IRQ_XLATE(irq));
 }
 
@@ -780,6 +786,10 @@ static int a1_misc_open(struct inode *inode, struct file *file)
 	struct a1_file44 *f = kzalloc(sizeof(*f), GFP_KERNEL);
 	int ret = 0;
 
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("a1: open %s pid %d\n", a1_misc_twin->twin.name, current->pid);
+#endif
+
 	if (!f)
 		return -ENOMEM;
 	f->private_data = a1_misc_twin->blob;
@@ -800,11 +810,17 @@ static int a1_misc_release(struct inode *inode, struct file *file)
 	struct a1_file44 *f = file->private_data;
 	int ret = 0;
 
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("a1: release %s pid %d enter\n", a1_misc_twin->twin.name, current->pid);
+#endif
 	if (a1_release_pre_hook)
 		a1_release_pre_hook();
 	if (a1_misc_twin->blob_release)
 		ret = a1_misc_twin->blob_release(inode, f);
 	kfree(f);
+#ifdef CONFIG_INGENIC_VO_TRACE
+	pr_info("a1: release %s pid %d done\n", a1_misc_twin->twin.name, current->pid);
+#endif
 	return ret;
 }
 
