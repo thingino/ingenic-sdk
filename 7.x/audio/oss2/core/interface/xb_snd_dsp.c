@@ -2454,6 +2454,14 @@ static void dsp_workqueue_handle(struct work_struct *work)
 	/* update ao data */
 	if(dpo && dpo->is_trans){
 		mutex_lock(&dpo->mutex);
+		/*
+		 * A disable_stream holding the mutex resets the fragments;
+		 * whatever was sampled before taking it is stale then.
+		 */
+		if (!dpo->is_trans) {
+			mutex_unlock(&dpo->mutex);
+			goto copy_ai;
+		}
 		ao_copy_loop = 0;
 		ao_dmaaddr_sync_ioaddr(dpo, ao_current_index);
 		while(!list_empty(&dpo->tasklist)){
@@ -2472,10 +2480,15 @@ static void dsp_workqueue_handle(struct work_struct *work)
 		mutex_unlock(&dpo->mutex);
 	}
 
+copy_ai:
 	loop_cnt0 = 0;
 	/* copy ai and aec to user */
 	if(dpi->is_trans && dpi->pipe_state == SND_DSP_STATE_RUN){
 		mutex_lock(&dpi->mutex);
+		if (!dpi->is_trans || dpi->pipe_state != SND_DSP_STATE_RUN) {
+			mutex_unlock(&dpi->mutex);
+			goto clear_ao;
+		}
 #if (!defined(CONFIG_SOC_T21) && !defined(CONFIG_SOC_T31) && !defined(CONFIG_SOC_C100))
 		/* sync aec data */
 		if(dpi->aec_enable && dpo->is_trans){
@@ -2557,10 +2570,15 @@ static void dsp_workqueue_handle(struct work_struct *work)
 		mutex_unlock(&dpi->mutex);
 	}
 
+clear_ao:
 	loop_cnt0 = 0;
 	/* sync ao dma_tracer and clear ao data */
 	if(dpo->is_trans && dpo->pipe_state == SND_DSP_STATE_RUN){
 		mutex_lock(&dpo->mutex);
+		if (!dpo->is_trans || dpo->pipe_state != SND_DSP_STATE_RUN) {
+			mutex_unlock(&dpo->mutex);
+			return;
+		}
 		if(dpo->flush_enable){
 			memset(dpo->vaddr, 0, dpo->buffersize);
 			dma_sync_single_for_device(snd_dev, dpo->paddr, dpo->buffersize, DMA_TO_DEVICE);
