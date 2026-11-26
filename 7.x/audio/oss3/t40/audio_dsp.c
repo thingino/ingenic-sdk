@@ -20,6 +20,7 @@
 #include <linux/dmaengine.h>
 #include "include/audio_dsp.h"
 #include "include/audio_debug.h"
+#include "include/audio_dmic.h"
 
 /*
  * BSP exposed dma_device->get_current_trans_addr to query the current DMA
@@ -2202,6 +2203,8 @@ static int audio_dsp_probe(struct platform_device *pdev)
 	 */
 	if (aic_enable)
 		platform_driver_register(&audio_aic_driver);
+	if (dmic_enable)
+		audio_dmic_register();
 
 	if (!dspdev->routes[AUDIO_ROUTE_AMIC_ID].pipe &&
 	    !dspdev->routes[AUDIO_ROUTE_SPK_ID].pipe) {
@@ -2219,6 +2222,8 @@ static int audio_dsp_probe(struct platform_device *pdev)
 	return 0;
 
 failed_no_route:
+	if (dmic_enable)
+		audio_dmic_unregister();
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
 	globe_dspdev = NULL;
@@ -2239,6 +2244,8 @@ static void audio_dsp_remove(struct platform_device *pdev)
 
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
+	if (dmic_enable)
+		audio_dmic_unregister();
 
 	hrtimer_cancel(&dspdev->hr_timer);
 	cancel_work_sync(&dspdev->workqueue);
