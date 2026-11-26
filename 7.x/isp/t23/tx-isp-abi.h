@@ -86,6 +86,8 @@ void t23_might_sleep_310(const char *file, int line, int preempt_offset);
 u32 t23_div64_32_44(u64 *n, u32 base);
 void t23_preempt_schedule_310(void);
 signed long t23_schedule_timeout_310(signed long timeout);
+long t23_prepare_to_wait_event_310(struct wait_queue_head *wq_head,
+				  struct wait_queue_entry *wq_entry, int state);
 
 int tx_isp_abi_init(void);
 void tx_isp_abi_exit(void);

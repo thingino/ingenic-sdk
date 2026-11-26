@@ -37,6 +37,7 @@ T23_REDEF := \
 	--redefine-sym preempt_schedule=t23_preempt_schedule_310 \
 	--redefine-sym seq_printf=t23_seq_printf_310 \
 	--redefine-sym schedule_timeout=t23_schedule_timeout_310 \
+	--redefine-sym prepare_to_wait_event=t23_prepare_to_wait_event_310 \
 	--redefine-sym cdev_init=t23_cdev_init_310 \
 	--redefine-sym cdev_del=t23_cdev_del_310 \
 	--redefine-sym class_destroy=t23_class_destroy_310 \
