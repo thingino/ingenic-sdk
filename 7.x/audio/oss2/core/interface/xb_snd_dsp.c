@@ -2296,7 +2296,7 @@ static inline int ai_copy_to_user(struct dsp_pipe *dp, struct task_node *node)
 #if (!defined(CONFIG_SOC_T21) && !defined(CONFIG_SOC_T31) && !defined(CONFIG_SOC_C100))
 		if(node->aec){
 			aec_frag = &dp->aecfragments[io_frag->index];
-			copy_to_user(node->aec, aec_frag->vaddr, size_inno);
+			memcpy(node->aec, aec_frag->vaddr, size_inno);
 			memset(aec_frag->vaddr, 0, size_inno);
 			node->aec += size_inno;
 		}
@@ -2365,7 +2365,7 @@ static inline int dmic_copy_to_user(struct dsp_pipe *dp, struct task_node *node)
 		dma_sync_single_for_device(snd_dev, (dma_addr_t)(dmic_io_frag->paddr), dmic_io_frag->size, DMA_TO_DEVICE);
 		if(node->dmic_aec) {
 			dmic_aec_frag = &dp_dmic->aecfragments[dmic_io_frag->index];
-			copy_to_user(node->dmic_aec, dmic_aec_frag->vaddr, size_dmic/attr->channel);
+			memcpy(node->dmic_aec, dmic_aec_frag->vaddr, size_dmic/attr->channel);
 			memset(dmic_aec_frag->vaddr, 0, size_dmic/attr->channel);
 			node->dmic_aec += size_dmic/attr->channel;
 		}
