@@ -66,6 +66,13 @@ static int libimp_abi = 2;
 module_param(libimp_abi, int, S_IRUGO);
 MODULE_PARM_DESC(libimp_abi, "ioctl numbering: 2 = 3.10 SDK libimp 1.1.x (SNDCTL_EXT_*), 3 = native OSS3");
 
+/*
+ * libimp 1.1.x sets a DMIC capture up with SNDCTL_DSP_SPEED and _CHANNELS (up
+ * to four) on its O_RDONLY fd and starts it with SNDCTL_EXT_ENABLE_DMIC_STREAM:
+ * the parameters wait here until then.
+ */
+static struct audio_parameter libimp_dmic_param = { 16000, 16, 1 };
+
 static int ioctl_trace;
 module_param(ioctl_trace, int, 0644);
 MODULE_PARM_DESC(ioctl_trace, "Log every /dev/dsp ioctl");
@@ -1245,8 +1252,8 @@ exit:
 }
 
 /* Kernel-side entry point: struct already parsed, no copy_from_user. */
-static long dsp_get_amic_ai_stream_k(struct audio_dsp_device *dsp,
-				     struct audio_input_stream *stream);
+static long dsp_get_ai_stream_k(struct audio_dsp_device *dsp, enum auido_route_index index,
+				struct audio_input_stream *stream);
 
 static long dsp_get_mic_stream(struct audio_dsp_device *dsp, enum auido_route_index index, unsigned long arg)
 {
@@ -1374,13 +1381,14 @@ exit:
 	return ret;
 }
 
-/* Same as dsp_get_mic_stream for AMIC but takes a kernel-side struct
- * instead of a userspace pointer. Used by the libimp compat path
- * which already parsed the 12-byte userspace struct. */
-static long dsp_get_amic_ai_stream_k(struct audio_dsp_device *dsp,
-				     struct audio_input_stream *stream)
+/* Same as dsp_get_mic_stream but takes a kernel-side struct instead of a
+ * userspace pointer. Used by the libimp compat path which already parsed
+ * the 12-byte userspace struct. */
+static long dsp_get_ai_stream_k(struct audio_dsp_device *dsp, enum auido_route_index index,
+				struct audio_input_stream *stream)
 {
-	struct audio_route *ai_route = &dsp->routes[AUDIO_ROUTE_AMIC_ID];
+	struct audio_route *ai_route = &dsp->routes[index];
+	bool aec = index == AUDIO_ROUTE_DMIC_ID ? dsp->dmic_aec : dsp->amic_aec;
 	struct audio_route *aec_route = &dsp->routes[AUDIO_ROUTE_AEC_ID];
 	struct dsp_data_manage *manage;
 	struct dsp_data_fragment *fragment, *aec_fragment;
@@ -1416,7 +1424,7 @@ again:
 			     fragment->vaddr, manage->fragment_size)) { ret = -EFAULT; goto out; }
 		dma_sync_single_for_device(ai_route->pipe->dma_chan->device->dev,
 			fragment->paddr, manage->fragment_size, DMA_FROM_DEVICE);
-		if (dsp->amic_aec && stream->aec) {
+		if (aec && stream->aec) {
 			aec_fragment = fragment->priv;
 			if (aec_fragment) {
 				dma_sync_single_for_cpu(aec_route->pipe->dma_chan->device->dev,
@@ -1714,14 +1722,43 @@ static long dsp_libimp_ioctl(struct audio_dsp_device *dsp, struct file *file,
 			     unsigned int cmd, unsigned long arg)
 {
 	bool ao = file->f_mode & FMODE_WRITE;
+	bool dmic_on = dsp->routes[AUDIO_ROUTE_DMIC_ID].state == AUDIO_BUSY_STATE;
+
+	if (cmd == 0x300) { /* the BSP's DMIC_GET_AI_STREAM: { data, aec, size } */
+		struct {
+			unsigned int data;
+			unsigned int aec;
+			unsigned int size;
+		} imp;
+		struct audio_input_stream ais;
+
+		if (ao)
+			return -EPERM;
+		if (copy_from_user(&imp, (void __user *)arg, sizeof(imp)))
+			return -EFAULT;
+		ais.data = (void __user *)(unsigned long)imp.data;
+		ais.size = imp.size;
+		ais.aec = (void __user *)(unsigned long)imp.aec;
+		ais.aec_size = imp.aec ? imp.size / libimp_dmic_param.channel : 0;
+		return dsp_get_ai_stream_k(dsp, AUDIO_ROUTE_DMIC_ID, &ais);
+	}
 
 	switch (_IOC_NR(cmd)) {
 	case 102: /* SNDCTL_EXT_ENABLE_STREAM, the argument is unused */
 		return ao ? dsp_enable_amic_ao(dsp) : dsp_enable_amic_ai_and_aec(dsp);
 	case 103: /* SNDCTL_EXT_DISABLE_STREAM */
 		return ao ? dsp_disable_amic_ao(dsp) : dsp_disable_amic_ai_and_aec(dsp);
-	case 112: /* SNDCTL_EXT_ENABLE_DMIC_STREAM */
-		return dsp_enable_dmic_ai(dsp);
+	case 112: { /* SNDCTL_EXT_ENABLE_DMIC_STREAM */
+		long ret;
+
+		if (ao)
+			return -EPERM;
+		mutex_lock(&dsp->mlock);
+		ret = dsp_config_route_param(dsp, AUDIO_ROUTE_DMIC_ID, AUDIO_CMD_CONFIG_PARAM,
+					     &libimp_dmic_param);
+		mutex_unlock(&dsp->mlock);
+		return ret ? ret : dsp_enable_dmic_ai(dsp);
+	}
 	case 113: /* SNDCTL_EXT_DISABLE_DMIC_STREAM */
 		return dsp_disable_dmic_ai(dsp);
 	case 105: /* SNDCTL_EXT_SET_AO_STREAM: { data, size } */
@@ -1744,16 +1781,20 @@ static long dsp_libimp_ioctl(struct audio_dsp_device *dsp, struct file *file,
 		ais.size = imp.frame_bytes;
 		ais.aec = (void __user *)(unsigned long)imp.aec;
 		ais.aec_size = imp.aec ? imp.frame_bytes : 0;
-		return dsp_get_amic_ai_stream_k(dsp, &ais);
+		return dsp_get_ai_stream_k(dsp, AUDIO_ROUTE_AMIC_ID, &ais);
 	}
 	case 106: /* SNDCTL_EXT_FLUSH_STREAM */
 		return ao ? dsp_ioctl_clear_ao_stream(dsp) : -ENOSYS;
 	case 107: /* SNDCTL_EXT_SYNC_STREAM */
 		return ao ? dsp_ioctl_sync_ao_stream(dsp) : -ENOSYS;
-	case 101: /* SNDCTL_EXT_ENABLE_AEC */
-		return ao ? 0 : dsp_enable_amic_aec(dsp, 0);
+	case 101: /* SNDCTL_EXT_ENABLE_AEC, the DMIC's while it records */
+		if (ao)
+			return 0;
+		return dmic_on ? dsp_enable_dmic_aec(dsp, 0) : dsp_enable_amic_aec(dsp, 0);
 	case 100: /* SNDCTL_EXT_DISABLE_AEC */
-		return ao ? 0 : dsp_disable_amic_aec(dsp);
+		if (ao)
+			return 0;
+		return dmic_on ? dsp_disable_dmic_aec(dsp) : dsp_disable_amic_aec(dsp);
 	}
 	return -ENOIOCTLCMD;
 }
@@ -1819,6 +1860,8 @@ static long dsp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 			if (copy_from_user(&v, (void __user *)arg, sizeof(v)))
 				return -EFAULT;
 			cache->rate = v;
+			if (!is_ao)
+				libimp_dmic_param.rate = v;
 			pr_info("audio: OSS SPEED %d (route %d)\n", v, rid);
 			goto reapply;
 		case 0xC0045005: /* SNDCTL_DSP_SETFMT */
@@ -1830,6 +1873,11 @@ static long dsp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		case 0xC0045006: /* SNDCTL_DSP_CHANNELS */
 			if (copy_from_user(&v, (void __user *)arg, sizeof(v)))
 				return -EFAULT;
+			if (!is_ao && v >= 1 && v <= 4)
+				libimp_dmic_param.channel = v;
+			/* more than two channels is a DMIC capture: nothing for the AMIC */
+			if (!is_ao && v > 2)
+				return 0;
 			cache->channel = (v >= 2) ? 2 : 1;
 			pr_info("audio: OSS CHANNELS %d (route %d)\n", v, rid);
 			goto reapply;
