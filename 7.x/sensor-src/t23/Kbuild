@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: GPL-2.0
 # T23 sensors: the vendor drivers, built for 7.x against the adapter in isp/t23
+# sc2336ps0/sc2336ps1 are the frame-synced pair of a two-sensor board; they
+# need the multi-sensor tx-isp (CONFIG_MULTI_SENSOR=1), whose sensor ops carry
+# the fsync callback.
 SENSORS := sc2336
+ifdef CONFIG_MULTI_SENSOR
+SENSORS += sc2336ps0 sc2336ps1
+ccflags-y += -DCONFIG_MULTI_SENSOR
+endif
 ccflags-y += -I$(src)/../../isp/t23/include -I$(src)/../../isp/t23
 ccflags-y += -Wno-unused-function -Wno-missing-prototypes -Wno-missing-declarations
 include $(src)/../sensors.mk

@@ -26,6 +26,14 @@ e.g. `./build.sh t20 7.x CONFIG_INGENIC_AUDIO=n`. `SENSOR_MODEL=<name>` (and
 `SENSOR_1_MODEL`, `SENSOR_2_MODEL`) limits the sensor drivers to those named;
 without it every sensor in `7.x/sensor-src/<soc>` is built.
 
+T23 boards with two sensors behind a MIPI switch (e.g. two SC2336 with frame
+sync) build with `CONFIG_MULTI_SENSOR=1`: tx-isp-t23 then runs the firmware's
+multi-sensor build (1.3.0-double) and the sensor drivers `sc2336ps0` (frame
+sync master, 0x30) and `sc2336ps1` (slave, 0x32) join the list. The VIC
+flips the switch pin itself (`mipi_switch_gpio`, PA7 by default; PB22 and
+PB30 also work), which has to be in its function 0. `7.x/test/imp-dual.c`
+streams both sensors.
+
 ## Modules
 
 | SoC | ISP (`tx-isp-<soc>.ko`) | encoder | OSD | audio (`audio.ko`) | sensors |
@@ -33,7 +41,7 @@ without it every sensor in `7.x/sensor-src/<soc>` is built.
 | T10 | vendor source + Apical blob (T20 tree) | `soc-vpu-t10.ko` (helix) | `ipu-t10.ko` | oss2 | jxf23, jxh42, ov9712 |
 | T20 | vendor source + Apical blob | `soc-vpu-t20.ko` (helix) | `ipu-t20.ko` | oss2 | jxf23, jxh42, ov9712 |
 | T21 | closed firmware 1.0.33 (3.10 build) + ABI adapter | `soc-vpu-t21.ko` (helix) | `ipu-t21.ko` | oss2 | ov2735b |
-| T23 | closed firmware 1.3.0 (4.4.94 build) + ABI adapter | `soc-vpu-t23.ko` (helix) | `ipu-t23.ko` | oss3 | sc2336 |
+| T23 | closed firmware 1.3.0 (4.4.94 build; 1.3.0-double with `CONFIG_MULTI_SENSOR=1`) + ABI adapter | `soc-vpu-t23.ko` (helix) | `ipu-t23.ko` | oss3 | sc2336 (sc2336ps0, sc2336ps1 multi-sensor) |
 | T30 | vendor source + Apical blob | `soc-vpu-t30.ko` (helix H.264/JPEG, radix H.265) | `ipu-t30.ko` | oss2 | jxf23, sc2235, sc4236 |
 | T31 | closed firmware 1.1.6 (3.10 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | `ipu.ko` | oss3 | gc4653 |
 | T32 | closed firmware isp_20260618a (5.15 build) + ABI adapter | `soc-vpu-t32.ko` (helix H.264/JPEG, radix H.265) | `ipu-t32.ko` (IPU v13) | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | sc4336p |
