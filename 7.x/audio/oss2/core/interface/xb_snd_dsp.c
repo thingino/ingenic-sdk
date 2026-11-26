@@ -121,6 +121,15 @@ static void snd_dma_burst(struct dsp_pipe *dp)
 
 	if (!width)
 		width = DMA_SLAVE_BUSWIDTH_2_BYTES;
+#if defined(CONFIG_SOC_T10) || defined(CONFIG_SOC_T20)
+	/*
+	 * The T10/T20 PDMA corrupts one left sample per RX burst read from the
+	 * AIC FIFO (every 8th frame at 32 bytes, every 4th at 16); single
+	 * transfers are clean, and the PDMA serves the per-word requests.
+	 */
+	if (c->direction == DMA_DEV_TO_MEM)
+		bytes = width;
+#endif
 	c->src_maxburst = c->dst_maxburst = bytes / width;
 }
 
