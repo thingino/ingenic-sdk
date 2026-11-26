@@ -469,19 +469,12 @@ static int dmic_probe(struct platform_device *pdev)
 		goto err_dmic_ioremap;
 	}
 
-	dmic->dma_res = platform_get_resource(pdev, IORESOURCE_DMA, 0);
-	if (NULL == dmic->dma_res) {
-		audio_err_print("failed to get dmic dma resource.\n");
-		goto err_dmic_get_dmaresource;
-	}
-
 	dmic_pipe = kzalloc(sizeof(struct audio_pipe), GFP_KERNEL);
 	if (NULL == dmic_pipe) {
 		audio_err_print("failed to kzalloc dmic pipe.\n");
 		goto err_dmic_alloc_pipe;
 	}
 	//init dmic dma config
-//	if (0 != init_dma_config(dmic_pipe, DMA_FROM_DEVICE, dmic->io_res->start, GET_MAP_TYPE(dmic->dma_res->start), &pdev->dev)) {
 	if (0 != init_dma_config(dmic_pipe, DMA_FROM_DEVICE, dmic->io_res->start, INGENIC_DMA_REQ_DMIC_RX, &pdev->dev)) {
 		audio_err_print("failed to init dmic dma config.\n");
 		goto err_init_dmic_dma;
@@ -544,7 +537,6 @@ err_dmicinfo_alloc:
 err_init_dmic_dma:
 	kfree(dmic_pipe);
 err_dmic_alloc_pipe:
-err_dmic_get_dmaresource:
 	devm_iounmap(&pdev->dev, dmic->iomem);
 err_dmic_ioremap:
 	devm_release_mem_region(&pdev->dev, dmic->io_res->start, resource_size(dmic->io_res));

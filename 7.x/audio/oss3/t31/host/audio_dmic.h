@@ -46,7 +46,6 @@ struct audio_dmic_device {
 	spinlock_t pipe_lock;
 
 	struct resource *io_res;
-	struct resource *dma_res;
 	struct clk *clk;
 	void __iomem *iomem;
 
