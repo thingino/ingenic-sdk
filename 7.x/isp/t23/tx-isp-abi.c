@@ -710,6 +710,13 @@ static int priv_clk_set_rate(struct clk *clk, unsigned long rate)
 #define T23_CLIENT44_ADAPTER	24	/* struct i2c_adapter * */
 #define T23_CLIENT44_DEV_DRIVER	100	/* struct device_driver * */
 
+/*
+ * stands in for the driver of a client no sensor module bound to: the
+ * firmware reads client->dev.driver->owner before it looks at the client
+ * (the second sensor a sample registers without its module loaded)
+ */
+static struct device_driver t23_no_driver;
+
 struct t23_i2c_twin {
 	u8 client44[T23_CLIENT44_SIZE] __aligned(4);
 	struct i2c_client *real;
@@ -770,7 +777,8 @@ static struct i2c_client *priv_i2c_new_device(struct i2c_adapter *adap,
 	memcpy(tw->client44 + T23_CLIENT44_NAME, real->name, I2C_NAME_SIZE);
 	BLOB(tw->client44, T23_CLIENT44_ADAPTER, struct i2c_adapter *) = real->adapter;
 	/* i2c_new_client_device() probes synchronously, so the driver is bound by now */
-	BLOB(tw->client44, T23_CLIENT44_DEV_DRIVER, void *) = real->dev.driver;
+	BLOB(tw->client44, T23_CLIENT44_DEV_DRIVER, void *) =
+		real->dev.driver ? (void *)real->dev.driver : (void *)&t23_no_driver;
 
 	mutex_lock(&t23_twin_lock);
 	for (i = 0; i < T23_MAX_TWINS; i++) {

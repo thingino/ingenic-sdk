@@ -694,11 +694,15 @@ static struct i2c_client *priv_i2c_new_device(struct i2c_adapter *adap,
 	memcpy(tw->client310 + T21_CLIENT310_NAME, real->name, I2C_NAME_SIZE);
 	BLOB(tw->client310, T21_CLIENT310_ADAPTER, struct i2c_adapter *) = real->adapter;
 	/* i2c_new_client_device() probes synchronously, so the driver is bound by now */
-	if (real->dev.driver) {
-		BLOB(tw->driver310, T21_DRIVER310_OWNER, struct module *) =
-			real->dev.driver->owner;
-		BLOB(tw->client310, T21_CLIENT310_DRIVER, void *) = tw->driver310;
-	}
+	/*
+	 * The firmware reads client->dev.driver->owner before it looks at the
+	 * client: a client no sensor module bound to (the second sensor a
+	 * sample registers without its module loaded) gets the driver copy
+	 * too, owner NULL, and the firmware then drops it as unbound.
+	 */
+	BLOB(tw->driver310, T21_DRIVER310_OWNER, struct module *) =
+		real->dev.driver ? real->dev.driver->owner : NULL;
+	BLOB(tw->client310, T21_CLIENT310_DRIVER, void *) = tw->driver310;
 
 	mutex_lock(&t21_twin_lock);
 	for (i = 0; i < T21_MAX_TWINS; i++) {
