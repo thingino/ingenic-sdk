@@ -23,6 +23,7 @@
 
 #include "include/audio_dsp.h"
 #include "include/audio_debug.h"
+#include "include/audio_dmic.h"
 
 static int fragment_time = 2; // the unit is 10ms.
 module_param(fragment_time, int, S_IRUGO);
@@ -43,15 +44,12 @@ static struct audio_dsp_device* globe_dspdev = NULL;
 
 //extern void jzdma_dump(struct dma_chan *chan);
 
-/* the DMIC host is not built yet; its route never starts */
-static dma_addr_t ingenic_dmic_get_dma_current_trans_addr(void)
+/* the DMIC's ring belongs to the AudioSystem DMA, not to a dmaengine channel */
+static struct device *route_dma_dev(struct audio_route *route)
 {
-	return 0;
-}
-
-static int ingenic_dmic_dma_init(dma_addr_t dma_addr, unsigned int fragment_size, unsigned int fragment_cnt)
-{
-	return -ENODEV;
+	if (route->index == AUDIO_ROUTE_DMIC_ID)
+		return audio_dmic_dev();
+	return route->pipe->dma_chan->device->dev;
 }
 
 /*
@@ -642,7 +640,7 @@ static long dsp_create_dma_chan(struct audio_route *route) {
 	}
 	manage->buffersize = manage->fragment_cnt * manage->fragment_size;
 	memset(pipe->vaddr, 0, manage->buffersize);
-	dma_sync_single_for_device(pipe->dma_chan->device->dev, pipe->paddr, manage->buffersize,
+	dma_sync_single_for_device(route_dma_dev(route), pipe->paddr, manage->buffersize,
 				   pipe->dma_config.direction == DMA_MEM_TO_DEV ?
 				   DMA_TO_DEVICE : DMA_FROM_DEVICE);
 	if (route->index == AUDIO_ROUTE_DMIC_ID){
@@ -686,6 +684,8 @@ static int dsp_destroy_dma_chan(struct audio_route *route) {
 	pipe = route->pipe;
 	if (route->index != AUDIO_ROUTE_DMIC_ID)
 		dmaengine_terminate_all(pipe->dma_chan);
+	else
+		ingenic_dmic_dma_deinit();
 
 	/* destroy fragments manage */
 	if (manage->fragments) {
@@ -1355,12 +1355,12 @@ again:
 		fragment = &(manage->fragments[io_tracer]);
 		if (fragment->state) {
 			/* the buffer is not coherent: invalidate before the CPU reads what DMA wrote */
-			dma_sync_single_for_cpu(ai_route->pipe->dma_chan->device->dev, fragment->paddr, manage->fragment_size, DMA_FROM_DEVICE);
+			dma_sync_single_for_cpu(route_dma_dev(ai_route), fragment->paddr, manage->fragment_size, DMA_FROM_DEVICE);
 			if (copy_to_user((stream.data + i * manage->fragment_size), fragment->vaddr, manage->fragment_size)) {
 				ret = -EFAULT;
 				goto out;
 			}
-			dma_sync_single_for_device(ai_route->pipe->dma_chan->device->dev, fragment->paddr, manage->fragment_size, DMA_FROM_DEVICE);
+			dma_sync_single_for_device(route_dma_dev(ai_route), fragment->paddr, manage->fragment_size, DMA_FROM_DEVICE);
 			/* copy aec data */
 			if (dsp->amic_aec && (stream.aec != NULL)) {
 				aec_fragment = fragment->priv;
@@ -2000,6 +2000,8 @@ static int audio_dsp_probe(struct platform_device *pdev)
 	/* the AIC platform device comes from the device tree; its driver binds on registration */
 	if (aic_enable)
 		platform_driver_register(&audio_aic_driver);
+	if (dmic_enable)
+		audio_dmic_register();
 
 	if (!dspdev->routes[AUDIO_ROUTE_AMIC_ID].pipe &&
 	    !dspdev->routes[AUDIO_ROUTE_SPK_ID].pipe) {
@@ -2019,6 +2021,8 @@ static int audio_dsp_probe(struct platform_device *pdev)
 failed_no_route:
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
+	if (dmic_enable)
+		audio_dmic_unregister();
 	globe_dspdev = NULL;
 	proc_remove(dspdev->proc);
 failed_to_proc:
@@ -2037,6 +2041,8 @@ static void audio_dsp_remove(struct platform_device *pdev)
 
 	if (aic_enable)
 		platform_driver_unregister(&audio_aic_driver);
+	if (dmic_enable)
+		audio_dmic_unregister();
 
 	hrtimer_cancel(&dspdev->hr_timer);
 	cancel_work_sync(&dspdev->workqueue);

@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: GPL-2.0
-# audio.ko: T41 AIC and inner codec (oss3 driver, SDK 1.2.6)
+# audio.ko: T41 AIC, inner codec and DMIC (oss3 driver, SDK 1.2.6)
 ccflags-y += -I$(src)/include
 
 audio-objs := \
 	audio_dsp.o \
 	audio_debug.o \
 	host/audio_aic.o \
+	host/audio_dmic.o \
 	inner_codecs/codec.o
 
 obj-m += audio.o
