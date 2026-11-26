@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
- * imp-dmic: record through libimp's IMP_DMIC (T32), write raw PCM16 and
- * report the level and the zero-crossing frequency.
+ * imp-dmic: record through libimp's IMP_DMIC (T32, T40, T41), write raw
+ * PCM16 and report the level and the zero-crossing frequency, then per
+ * 0.5 s window the mean, the rms and the strongest frequency (DFT over
+ * 50-4000 Hz in 5 Hz steps) as "STAT t=..." lines.
  *
  * usage: imp-dmic <out.pcm> [seconds] [rate] [gain]
  *
@@ -12,10 +14,52 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 #include <imp/imp_log.h>
 #include <imp/imp_dmic.h>
 
 #define CHK(call) do { int r_ = (call); printf("%s = %d\n", #call, r_); fflush(stdout); if (r_ < 0) return 1; } while (0)
+
+static void stat_windows(const char *path, int rate)
+{
+	int win = rate / 2, w = 0;
+	int16_t *b = malloc(win * 2);
+	FILE *f = fopen(path, "rb");
+
+	if (!f || !b)
+		goto out;
+	while (fread(b, 2, win, f) == (size_t)win) {
+		double mean = 0, sq = 0, best = 0, bf = 0;
+		int i, fr;
+
+		for (i = 0; i < win; i++)
+			mean += b[i];
+		mean /= win;
+		for (i = 0; i < win; i++)
+			sq += (b[i] - mean) * (b[i] - mean);
+		/* every other sample: enough below 4 kHz, and half the work */
+		for (fr = 50; fr <= 4000; fr += 5) {
+			double re = 0, im = 0, k = 2 * M_PI * fr / rate, a;
+
+			for (i = 0; i < win; i += 2) {
+				re += (b[i] - mean) * cos(k * i);
+				im += (b[i] - mean) * sin(k * i);
+			}
+			a = sqrt(re * re + im * im) * 2.0 / (win / 2);
+			if (a > best) {
+				best = a;
+				bf = fr;
+			}
+		}
+		printf("STAT t=%.1f dc=%.0f rms=%.1f peak=%.0f Hz amp=%.1f\n", w * 0.5, mean,
+		       sqrt(sq / win), bf, best);
+		w++;
+	}
+out:
+	if (f)
+		fclose(f);
+	free(b);
+}
 
 int main(int argc, char **argv)
 {
@@ -84,6 +128,7 @@ int main(int argc, char **argv)
 	       got ? __builtin_sqrt(sq / got) : 0.0, got ? zc * rate / 2.0 / got : 0.0);
 	CHK(IMP_DMIC_DisableChn(0, 0));
 	CHK(IMP_DMIC_Disable(0));
+	stat_windows(out, rate);
 	printf("DMIC DONE\n");
 	return 0;
 }
