@@ -30,6 +30,7 @@
 #include <net/netlink.h>
 #include <net/sock.h>
 #include <linux/clk.h>
+#include <linux/math64.h>
 
 #include <txx-funcs.h>
 #include <tx-isp-debug.h>
@@ -372,4 +373,10 @@ int t23_clk_set_parent_44(struct clk *clk, struct clk *parent)
 	if (IS_ERR_OR_NULL(parent))
 		return 0;
 	return clk_set_parent(clk, parent);
+}
+
+/* the generic do_div() helper; MIPS 7.x has it only as an inline macro */
+u32 t23_div64_32_44(u64 *n, u32 base)
+{
+	return do_div(*n, base);
 }

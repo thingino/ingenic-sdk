@@ -65,6 +65,22 @@ extern int ivdc_threshold_line;
 module_param(ivdc_threshold_line, int, S_IRUGO);
 MODULE_PARM_DESC(ivdc_threshold_line, "ivdc threshold line");
 
+#ifdef CONFIG_MULTI_SENSOR
+/*
+ * The multi-sensor firmware hands this pin to the VIC, which flips the MIPI
+ * switch between the sensors itself; it supports PA7, PB22 and PB30 (7, 54,
+ * 62). The firmware's own get_mipi_switch_gpio() is a weak stub returning 0.
+ */
+static int mipi_switch_gpio = 7;
+module_param(mipi_switch_gpio, int, S_IRUGO);
+MODULE_PARM_DESC(mipi_switch_gpio, "select mipi switch gpio");
+
+int get_mipi_switch_gpio(void)
+{
+	return mipi_switch_gpio;
+}
+#endif
+
 char *sclk_name[2] = {"mpll", "sclka"};
 
 int isp_printf(unsigned int level, unsigned char *fmt, ...)

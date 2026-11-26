@@ -83,6 +83,7 @@ void *t23_dev_get_drvdata_310(const struct device *dev);
 void t23_kfree_skb_310(struct sk_buff *skb);
 void *t23_pde_data_310(const struct inode *inode);
 void t23_might_sleep_310(const char *file, int line, int preempt_offset);
+u32 t23_div64_32_44(u64 *n, u32 base);
 void t23_preempt_schedule_310(void);
 signed long t23_schedule_timeout_310(signed long timeout);
 

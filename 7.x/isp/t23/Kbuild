@@ -1,17 +1,27 @@
 # SPDX-License-Identifier: GPL-2.0
 # tx-isp-t23.ko: the 4.4.94-built T23 ISP firmware (libt23-firmware-540-4494.a,
 # 1.3.0) plus the adapter that lets it run on Linux 7.x.
+#
+# CONFIG_MULTI_SENSOR=1 builds it from the firmware's multi-sensor build
+# instead (1.3.0-double, up to three sensors behind a MIPI switch); the
+# sensor drivers then have to be built with the same flag.
 
 ccflags-y += -I$(src)/include -I$(src)
 ccflags-y += -Wno-unused-function
 
 tx-isp-t23-objs := tx-isp-module.o tx-isp-debug.o tx-isp-abi.o txx-funcs.o \
-		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fwc.o \
-		   tx-isp-fwc-tun.o tx-isp-fw.o
+		   tx-isp-sinfo.o tx-isp-exports.o tx-isp-twin.o tx-isp-fw.o
 
 obj-m += tx-isp-t23.o
 
+ifdef CONFIG_MULTI_SENSOR
+ccflags-y += -DCONFIG_MULTI_SENSOR
+tx-isp-t23-objs += tx-isp-fwc-ulimit.o
+T23_FW := sdk/libt23-firmware-double.fw
+else
+tx-isp-t23-objs += tx-isp-fwc.o tx-isp-fwc-tun.o
 T23_FW := sdk/libt23-firmware.fw
+endif
 
 # The firmware's direct imports whose semantics or layout changed on 7.x are
 # redirected to the translators in txx-funcs.c and tx-isp-twin.c. printk is a
@@ -38,6 +48,8 @@ T23_REDEF := \
 	--redefine-sym dma_alloc_from_coherent=t23_dma_alloc_from_coherent_44 \
 	--redefine-sym dma_release_from_coherent=t23_dma_release_from_coherent_44 \
 	--redefine-sym __copy_user=__raw_copy_to_user \
+	--redefine-sym getrawmonotonic64=ktime_get_raw_ts64 \
+	--redefine-sym __div64_32=t23_div64_32_44 \
 	--globalize-symbol=tevent_info
 
 # tx-isp-fwc.c and tx-isp-fwc-tun.c take over the five firmware functions that
