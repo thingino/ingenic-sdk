@@ -386,8 +386,20 @@ static int frame_channel_vidioc_g_selection(struct file *file, void *priv,
 	struct isp_private_ioctl ioctl;
 	int ret = ISP_SUCCESS;
 
-	if (sel->type != vdev->vbq.type)
-		return -EINVAL;
+	/*
+	 * libimp's VIDIOC_CROPCAP leaves the type uninitialised, which the
+	 * vendor cropcap never looked at; the core then takes it for an output
+	 * and asks for the compose bounds. Answer those as the crop bounds.
+	 */
+	if (sel->type != vdev->vbq.type) {
+		if (sel->target == V4L2_SEL_TGT_COMPOSE_BOUNDS)
+			sel->target = V4L2_SEL_TGT_CROP_BOUNDS;
+		else if (sel->target == V4L2_SEL_TGT_COMPOSE_DEFAULT)
+			sel->target = V4L2_SEL_TGT_CROP_DEFAULT;
+		else if (sel->target != V4L2_SEL_TGT_CROP_BOUNDS &&
+			 sel->target != V4L2_SEL_TGT_CROP_DEFAULT)
+			return -EINVAL;
+	}
 
 	switch (sel->target) {
 	case V4L2_SEL_TGT_CROP:
