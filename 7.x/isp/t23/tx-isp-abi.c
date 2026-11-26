@@ -776,10 +776,21 @@ static int priv_gpio_set_debounce(unsigned gpio, unsigned debounce)
 	return -ENOSYS;
 }
 
-/* pin function and pull belong to pinctrl on 7.x; the DT carries them */
+static int t23_pins_select(const char *name);
+
+/*
+ * Pin function and pull belong to pinctrl on 7.x; the DT carries them. The
+ * one the firmware sets at run time is the MIPI switch pad it hands to the
+ * VIC when it starts more than one sensor: that is the ISP node's
+ * "mipi-switch" pin state.
+ */
 static int priv_jzgpio_set_func(int port, enum gpio_function func,
 				unsigned long pins)
 {
+#ifdef CONFIG_MULTI_SENSOR
+	if (pins && port * 32 + __ffs(pins) == get_mipi_switch_gpio())
+		t23_pins_select("mipi-switch");
+#endif
 	return 0;
 }
 
@@ -1300,6 +1311,24 @@ static int t23_pins_get(void)
 err_put:
 	platform_device_put(t23_pins_dev);
 	t23_pins_dev = NULL;
+	return ret;
+}
+
+static int t23_pins_select(const char *name)
+{
+	struct pinctrl_state *st;
+	int ret;
+
+	if (!t23_pins)
+		return -ENODEV;
+	st = pinctrl_lookup_state(t23_pins, name);
+	if (IS_ERR(st)) {
+		pr_warn_once("t23-isp: no \"%s\" pin state on the ISP node\n", name);
+		return PTR_ERR(st);
+	}
+	ret = pinctrl_select_state(t23_pins, st);
+	if (ret)
+		pr_err("t23-isp: pin state %s: %d\n", name, ret);
 	return ret;
 }
 

@@ -31,7 +31,8 @@ sync) build with `CONFIG_MULTI_SENSOR=1`: tx-isp-t23 then runs the firmware's
 multi-sensor build (1.3.0-double) and the sensor drivers `sc2336ps0` (frame
 sync master, 0x30) and `sc2336ps1` (slave, 0x32) join the list. The VIC
 flips the switch pin itself (`mipi_switch_gpio`, PA7 by default; PB22 and
-PB30 also work), which has to be in its function 0. `7.x/test/imp-dual.c`
+PB30 also work); tx-isp-t23 selects the ISP node's "mipi-switch" pin state
+for it, which the board's DT has to provide. `7.x/test/imp-dual.c`
 streams both sensors.
 
 ## Modules
