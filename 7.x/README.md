@@ -52,6 +52,9 @@ streams both sensors.
 
 Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`
 region, and `ispmem=` on the T10/T20) and `android_logger.ko` (`/dev/log_*`).
+`adc-aux.ko` (all but the A1, on a kernel with IIO) gives vendor userspace its SADC devices,
+`/dev/jz_adc_aux_N` (T10 to T31) or `/dev/ingenic_adc_aux_N` (T32 and later),
+on the kernel's `ingenic-sadc` IIO driver.
 
 The closed ISP firmware is the vendor object, unmodified. The adapter
 (`tx-isp-abi.c`, `txx-funcs.c`, `tx-isp-fwc*.c`) redirects its imports whose

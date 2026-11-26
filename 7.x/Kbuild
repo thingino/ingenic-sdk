@@ -23,6 +23,8 @@
 #   CONFIG_INGENIC_AIP     ingenic-aip.ko (a1 only)
 #   CONFIG_INGENIC_RMEM    rmem.ko, /dev/rmem for libimp
 #   CONFIG_INGENIC_LOGGER  android_logger.ko, /dev/log_* for libimp
+#   CONFIG_INGENIC_ADC_AUX adc-aux.ko, the vendor /dev/*adc_aux_N on the
+#                          kernel's SADC driver
 
 soc := $(SOC_FAMILY)
 ifeq ($(filter t10 t20 t21 t23 t30 t31 t32 t33 t40 t41 a1,$(soc)),)
@@ -52,6 +54,7 @@ CONFIG_INGENIC_VDEC          ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_FB            ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_RMEM          ?= y
 CONFIG_INGENIC_LOGGER        ?= y
+CONFIG_INGENIC_ADC_AUX       ?= $(if $(is_a1),n,$(if $(CONFIG_IIO),y,n))
 
 $(info ingenic-sdk: soc=$(soc) kernel=7.x)
 
@@ -109,4 +112,8 @@ endif
 
 ifeq ($(CONFIG_INGENIC_LOGGER),y)
     obj-m += 7.x/logger/
+endif
+
+ifeq ($(CONFIG_INGENIC_ADC_AUX),y)
+    obj-m += 7.x/adc-aux/
 endif
