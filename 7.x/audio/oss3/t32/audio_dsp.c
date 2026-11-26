@@ -38,9 +38,15 @@ static dma_addr_t pipe_dma_pos(struct audio_pipe *pipe, unsigned int buffersize)
 	if (!pipe || !pipe->dma_chan)
 		return 0;
 	dmaengine_tx_status(pipe->dma_chan, pipe->dma_chan->cookie, &state);
-	if (state.residue > buffersize)
+	if (!buffersize || state.residue > buffersize)
 		return pipe->paddr;
-	return pipe->paddr + (buffersize - state.residue);
+	/*
+	 * A residue of 0 (the last period just drained, or a descriptor the
+	 * DMA driver no longer tracks) is the start of the ring again: the
+	 * end of the buffer is not a fragment, and indexing it ran the
+	 * dma_tracer loops forever or past the fragments array.
+	 */
+	return pipe->paddr + (buffersize - state.residue) % buffersize;
 }
 
 static void dsp_cyclic_dma_callback(void *data)
