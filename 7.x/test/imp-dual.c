@@ -308,12 +308,16 @@ static void tdump(const char *name, int s, int r, const void *p, int nw)
 		tdump(#fn, s, API(s, fn, (void *)tbuf), tbuf, nw);	\
 	} while (0)
 
+/* set, read back, then put the value from before the test back */
 #define TSETGET(s, fn, type, v)						\
 	do {								\
-		type g_ = 0;						\
+		type o_ = 0, g_ = 0;					\
+		int p_ = API(s, IMP_ISP_Tuning_Get##fn, &o_);		\
 		int r_ = API(s, IMP_ISP_Tuning_Set##fn, v);		\
 		int q_ = API(s, IMP_ISP_Tuning_Get##fn, &g_);		\
 									\
+		if (!p_)						\
+			API(s, IMP_ISP_Tuning_Set##fn, o_);		\
 		printf("T s%d %-28s = %d get %d %u%s\n", s, #fn "(" #v ")", r_, q_, \
 		       (unsigned int)g_, (unsigned int)g_ == (unsigned int)(v) ? "" : " MISMATCH"); \
 	} while (0)
@@ -335,14 +339,16 @@ static void tune_api(int s)
 	TSETGET(s, MaxAgain, uint32_t, 0x2000 + 0x100 * s);
 	TSETGET(s, MaxDgain, uint32_t, 0x100 + 0x10 * s);
 	TSETGET(s, ISPHflip, IMPISPTuningOpsMode, IMPISP_TUNING_OPS_MODE_ENABLE);
-	TSETGET(s, ISPHflip, IMPISPTuningOpsMode, IMPISP_TUNING_OPS_MODE_DISABLE);
 	TSETGET(s, ISPVflip, IMPISPTuningOpsMode, IMPISP_TUNING_OPS_MODE_ENABLE);
-	TSETGET(s, ISPVflip, IMPISPTuningOpsMode, IMPISP_TUNING_OPS_MODE_DISABLE);
 	TSETGET(s, ISPRunningMode, IMPISPRunningMode, IMPISP_RUNNING_MODE_DAY);
 	{
-		uint32_t num = 0, den = 0;
+		uint32_t num = 0, den = 0, on = 0, od = 0;
+		int p = API(s, IMP_ISP_Tuning_GetSensorFPS, &on, &od);
 		int r = API(s, IMP_ISP_Tuning_SetSensorFPS, 15, 1);
 		int q = API(s, IMP_ISP_Tuning_GetSensorFPS, &num, &den);
+
+		if (!p && od)
+			API(s, IMP_ISP_Tuning_SetSensorFPS, on, od);
 
 		printf("T s%d %-28s = %d get %d %u/%u\n", s, "SensorFPS(15/1)", r, q, num, den);
 	}
@@ -535,8 +541,11 @@ static void tune_tisp(int s)
 		r = tisp_cmd(fd, 0x20007400, par);
 		len = *(unsigned int *)(par + 4);
 		c1 = csum(par + 0x1b, len);
-		/* the same parameters back, and read again */
-		r2 = tisp_cmd(fd, 0x20007401, par);
+		/*
+		 * the same parameters back, and read again; not the register
+		 * map, whose get and set buffers differ
+		 */
+		r2 = id == 0x1c ? 0 : tisp_cmd(fd, 0x20007401, par);
 		memset(par + 4, 0, TISP_PAR - 4);
 		par[0x1a] = s;
 		tisp_cmd(fd, 0x20007400, par);
@@ -568,8 +577,7 @@ static void tune_tisp(int s)
 	printf("T s%d tisp get ae = %d sensor %u len %u\n", s, r, par[0x1a], *(unsigned int *)(par + 4));
 	r = tisp_cmd(fd, 0x20007405, par);
 	printf("T s%d tisp set ae = %d\n", s, r);
-	r = tisp_cmd(fd, 0x20007406, par);
-	printf("T s%d tisp set ae minmax = %d\n", s, r);
+	/* set ae minmax has no get: only its bad pointer (below), no made-up limits */
 	r = tisp_cmd(fd, 0x20007407, par);
 	printf("T s%d tisp get awb = %d sensor %u len %u\n", s, r, par[0x1a], *(unsigned int *)(par + 4));
 	r = tisp_cmd(fd, 0x20007408, par);
@@ -659,15 +667,17 @@ static void tune_vic(void)
 	close(fd);
 }
 
-static void vin_cmd(const char *cmd, const void *ubuf, size_t n)
+/* one video input command, and what the node reads back; returns that as a number */
+static unsigned int vin_cmd(const char *cmd, const void *ubuf, size_t n)
 {
 	int fd = open("/proc/jz/isp/isp-w00", O_RDWR);
 	char out[160];
+	unsigned int v;
 	ssize_t r, k;
 
 	if (fd < 0) {
 		printf("T vin: open errno %d\n", errno);
-		return;
+		return 0;
 	}
 	errno = 0;
 	r = write(fd, ubuf ? ubuf : cmd, ubuf || n ? n : strlen(cmd));
@@ -678,15 +688,19 @@ static void vin_cmd(const char *cmd, const void *ubuf, size_t n)
 	if (fd >= 0)
 		close(fd);
 	out[k > 0 ? k : 0] = 0;
+	v = strtoul(out, NULL, 0);
 	for (k = 0; out[k]; k++)
 		if (out[k] == '\n')
 			out[k] = '|';
 	printf(" -> %s\n", out);
+	return v;
 }
 
 static void tune_vin(void)
 {
 	static char big[300];
+	char w[40];
+	unsigned int v;
 
 	vin_cmd("r sen_reg 0x3107", NULL, 0);
 	vin_cmd("r sen_reg 0x3108", NULL, 0);
@@ -696,8 +710,13 @@ static void tune_vin(void)
 	vin_cmd("r sen_reg2 0x3108", NULL, 0);
 	vin_cmd("r sen_reg1 0x3221", NULL, 0);
 	vin_cmd("r sen_reg2 0x3221", NULL, 0);
-	vin_cmd("w sen_reg 0x3902 0x85", NULL, 0);
-	vin_cmd("w sen_reg1 0x3902 0x85", NULL, 0);
+	/* the writes put back what the register holds */
+	v = vin_cmd("r sen_reg 0x3902", NULL, 0);
+	snprintf(w, sizeof(w), "w sen_reg 0x3902 0x%x", v);
+	vin_cmd(w, NULL, 0);
+	v = vin_cmd("r sen_reg1 0x3902", NULL, 0);
+	snprintf(w, sizeof(w), "w sen_reg1 0x3902 0x%x", v);
+	vin_cmd(w, NULL, 0);
 	vin_cmd("w sen_reg2 0x3902 0x85", NULL, 0);
 	vin_cmd("r sen_reg2 0x3902", NULL, 0);
 	vin_cmd("w sen_reg2", NULL, 0);
