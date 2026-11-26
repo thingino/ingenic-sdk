@@ -3,6 +3,7 @@
  * imp-ao: play a generated sine through libimp's IMP_AO.
  *
  * usage: imp-ao [seconds] [hz] [rate] [amplitude]
+ * AO_VOL and AO_GAIN override the default volume (60) and gain (28).
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,8 +45,8 @@ int main(int argc, char **argv)
 	CHK(IMP_AO_SetPubAttr(0, &attr));
 	CHK(IMP_AO_Enable(0));
 	CHK(IMP_AO_EnableChn(0, 0));
-	CHK(IMP_AO_SetVol(0, 0, 60));
-	CHK(IMP_AO_SetGain(0, 0, 28));
+	CHK(IMP_AO_SetVol(0, 0, getenv("AO_VOL") ? atoi(getenv("AO_VOL")) : 60));
+	CHK(IMP_AO_SetGain(0, 0, getenv("AO_GAIN") ? atoi(getenv("AO_GAIN")) : 28));
 
 	while (done < total) {
 		int i;
