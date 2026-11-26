@@ -278,7 +278,7 @@ static void dsp_workqueue_handle(struct work_struct *work)
 			if(ao_new_tracer < ao_route->manage.fragment_cnt && ao_new_tracer >= 0){
 				while(dma_tracer != ao_new_tracer){
 					if(dma_tracer == ao_route->manage.io_tracer){
-						printk("%d: audio spk io late!\n", __LINE__);
+						pr_debug("audio: spk io late\n");
 						io_late = 1;
 					}
 					memset(ao_route->manage.fragments[dma_tracer].vaddr, 0, ao_route->manage.fragment_size);
