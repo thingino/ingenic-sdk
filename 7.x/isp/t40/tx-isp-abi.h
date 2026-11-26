@@ -85,6 +85,8 @@ void *t40_pde_data_44(const struct inode *inode);
 void t40_might_sleep_44(const char *file, int line, int preempt_offset);
 void t40_preempt_schedule_44(void);
 signed long t40_schedule_timeout_44(signed long timeout);
+long t40_prepare_to_wait_event_44(struct wait_queue_head *wq_head,
+				 struct wait_queue_entry *wq_entry, int state);
 
 char *t40_strncpy(char *dst, const char *src, size_t n);
 void t40_arch_sync_dma_for_device(phys_addr_t paddr, size_t size, enum dma_data_direction dir);

@@ -25,6 +25,7 @@ T40_REDEF := \
 	--redefine-sym PDE_DATA=t40_pde_data_44 \
 	--redefine-sym seq_printf=t40_seq_printf_44 \
 	--redefine-sym schedule_timeout=t40_schedule_timeout_44 \
+	--redefine-sym prepare_to_wait_event=t40_prepare_to_wait_event_44 \
 	--redefine-sym cdev_init=t40_cdev_init_44 \
 	--redefine-sym cdev_del=t40_cdev_del_44 \
 	--redefine-sym clk_get=t40_clk_get_44 \

@@ -238,6 +238,21 @@ signed long t40_schedule_timeout_44(signed long timeout)
 }
 
 /*
+ * The firmware's wait_event loops come from 4.4 headers: they only clear
+ * the entry's flags and list, because 4.4's prepare_to_wait_event() set
+ * its task and wake function. 7.x moved that into init_wait_entry(), so
+ * without this the entry is queued with stack garbage as its wake function
+ * and the next wake_up() from the ISP interrupt jumps through it.
+ */
+long t40_prepare_to_wait_event_44(struct wait_queue_head *wq_head,
+				 struct wait_queue_entry *wq_entry, int state)
+{
+	wq_entry->private = current;
+	wq_entry->func = autoremove_wake_function;
+	return prepare_to_wait_event(wq_head, wq_entry, state);
+}
+
+/*
  * 3.10's seq_printf() returned 0 on success and -1 on overflow, and the
  * firmware's show() callbacks add those results up as their status. 7.x
  * returns void.
