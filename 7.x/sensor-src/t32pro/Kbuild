@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: GPL-2.0
+# T32 Pro sensors: the vendor SDK 2.0.0 PRJ009 drivers, built against the
+# device layer headers in isp/t32pro
+SENSORS := gc5613
+ccflags-y += -I$(src)/../../isp/t32pro/include
+ccflags-y += -DCONFIG_SOC_PRJ009 -DCONFIG_KERNEL_5_15
+ccflags-y += -Wno-unused-function -Wno-missing-prototypes -Wno-missing-declarations
+include $(src)/../sensors.mk
