@@ -2,7 +2,7 @@
 # soc-vpu-a1.ko: the /dev/soc_vpu channel scheduler and the A1 helix (JPEG) client,
 # vendor SDK A1-1.7.0 kernel 4.4.94 drivers/video/ingenic_vpu. Also exports
 # vpu_work_lock/unlock/is_locked, which the VC8000D decoder module takes.
-ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=1 -Wno-error
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_CHANNEL_NODE_NUM=32 -DCONFIG_VPU_NODE_NUM=1 -Wno-error
 
 soc-vpu-a1-objs := soc_vpu.o helix.o
 obj-m += soc-vpu-a1.o
