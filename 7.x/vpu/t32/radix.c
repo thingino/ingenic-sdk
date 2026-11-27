@@ -608,6 +608,7 @@ static void vpu_remove(struct platform_device *dev)
 
 static const struct of_device_id jz_radix_dt_match[] = {
 	{ .compatible = "ingenic,t32-radix" },
+	{ .compatible = "ingenic,t32pro-radix" },
 	{ .compatible = "ingenic,t33-radix" },
 	{ }
 };

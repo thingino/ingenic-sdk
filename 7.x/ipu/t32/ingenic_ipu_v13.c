@@ -1287,6 +1287,7 @@ static SIMPLE_DEV_PM_OPS(ingenic_ipu_pm_ops, ingenic_ipu_suspend, ingenic_ipu_re
 
 static const struct of_device_id ingenic_ipu_dt_match[] = {
 	{ .compatible = "ingenic,t32-ipu" },
+	{ .compatible = "ingenic,t32pro-ipu" },
 	{ .compatible = "ingenic,t33-ipu" },
 	{ }
 };

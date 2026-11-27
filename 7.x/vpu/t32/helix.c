@@ -511,6 +511,7 @@ static void vpu_remove(struct platform_device *dev)
 
 static const struct of_device_id jz_helix_dt_match[] = {
 	{ .compatible = "ingenic,t32-helix" },
+	{ .compatible = "ingenic,t32pro-helix" },
 	{ .compatible = "ingenic,t33-helix" },
 	{ }
 };
