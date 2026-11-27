@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
 # soc-vpu-t30.ko: the /dev/soc_vpu channel scheduler with the T30 helix (H.264,
 # JPEG) and radix (H.265), vendor SDK 1.0.5 kernel/drivers/video/soc_vpu
-ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_T30 -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=2 -Wno-error
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_T30 -DCONFIG_CHANNEL_NODE_NUM=6 -DCONFIG_VPU_NODE_NUM=2 -Wno-error
 
 soc-vpu-t30-objs := soc_vpu.o helix.o radix.o
 obj-m += soc-vpu-t30.o
