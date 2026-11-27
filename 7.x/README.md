@@ -49,7 +49,7 @@ streams both sensors.
 | T32 Pro | vendor device layer source + closed firmware H20260803b (one build for all vendor kernels) | `soc-vpu-t32pro.ko` (helix H.264/JPEG, radix H.265; sources in `vpu/t32`) | `ipu-t32pro.ko` (IPU v13; sources in `ipu/t32`) | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | gc5613 |
 | T33 | closed firmware isp_20260706a (5.15 build) + ABI adapter | `soc-vpu-t33.ko` (helix H.264/JPEG, radix H.265; sources in `vpu/t32`) | `ipu-t33.ko` (IPU v13; sources in `ipu/t32`) | oss3 (AIC, inner codec) | gc5613 |
 | T40 | closed firmware 1.3.1 (4.4.94 build) + ABI adapter | `avpu.ko` (EL150 H.264/H.265/JPEG) | | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | imx307, gc4653 |
-| T41 | closed firmware 1.2.6 (4.4.94 build) + ABI adapter | `avpu.ko` (EL200 H.264/H.265/JPEG) | | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | gc4023 |
+| T41 | closed firmware 1.2.6 (4.4.94 build) + ABI adapter | `avpu.ko` (EL200 H.264/H.265/JPEG), `soc-vpu-t41.ko` (helix JPEG: libimp's "ivpu" channels and `*_Ex` calls) | | oss3 (AIC, inner codec, DMIC with `dmic_enable=1`) | gc4023 |
 
 Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`
 region, and `ispmem=` on the T10/T20) and `android_logger.ko` (`/dev/log_*`).

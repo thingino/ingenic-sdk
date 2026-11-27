@@ -12,7 +12,7 @@
 #   CONFIG_INGENIC_SENSOR  sensor_<name>_<soc>.ko: SENSOR_MODEL (and
 #                          SENSOR_1_MODEL / SENSOR_2_MODEL), else every
 #                          sensor in sensor-src/<soc>
-#   CONFIG_INGENIC_VPU     soc-vpu-<soc>.ko (helix/radix, not on t31)
+#   CONFIG_INGENIC_VPU     soc-vpu-<soc>.ko (helix/radix, not on t31 and t40)
 #   CONFIG_INGENIC_AVPU    avpu.ko (t31 and t41 only)
 #   CONFIG_INGENIC_IPU     ipu-<soc>.ko (ipu.ko on t31), libimp OSD
 #   CONFIG_INGENIC_AUDIO   audio.ko, oss2 or oss3 (CONFIG_INGENIC_AUDIO_VARIANT)
@@ -49,7 +49,7 @@ is_a1   := $(if $(filter a1,$(soc)),y)
 
 CONFIG_INGENIC_ISP           ?= $(if $(is_a1),n,y)
 CONFIG_INGENIC_SENSOR        ?= $(if $(is_a1),n,y)
-CONFIG_INGENIC_VPU           ?= $(if $(is_t31)$(is_t40)$(is_t41),n,y)
+CONFIG_INGENIC_VPU           ?= $(if $(is_t31)$(is_t40),n,y)
 CONFIG_INGENIC_AVPU          ?= $(if $(is_t31)$(is_t40)$(is_t41),y,n)
 CONFIG_INGENIC_IPU           ?= $(if $(is_t40)$(is_t41),n,y)
 CONFIG_INGENIC_AUDIO         ?= y
