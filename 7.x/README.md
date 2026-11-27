@@ -57,6 +57,15 @@ region, and `ispmem=` on the T10/T20) and `android_logger.ko` (`/dev/log_*`).
 `/dev/jz_adc_aux_N` (T10 to T31) or `/dev/ingenic_adc_aux_N` (T32 and later),
 on the kernel's `ingenic-sadc` IIO driver.
 
+The T32, T33, T40 and T41 get `mpsys_driver.ko`: the vendor multi-process
+object (`/dev/mpsys_data`, libimp's frame and encoder sharing between a
+primary and secondary processes; on the T40/T41 also `/dev/nna_lock` (mpsys_utils),
+blocks of an `nmem=<n>M@<hex>` region and a global lock, created only when
+`nmem=` is on the command line) with an adapter in the same style as the
+ISP's (`mpsys-abi.c`, `mpsys-fwc.c`). The T40 and T41 get `i2d.ko`
+(`/dev/i2d`, libimp's rotation, mirror and flip on the I2D block), from the
+vendor 4.4.94 driver (the T32/T33 libimp only logs that it is missing).
+
 The closed ISP firmware is the vendor object, unmodified. The adapter
 (`tx-isp-abi.c`, `txx-funcs.c`, `tx-isp-fwc*.c`) redirects its imports whose
 semantics changed since 3.10/4.4 to translators, replaces the firmware
