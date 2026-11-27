@@ -55,7 +55,8 @@ Every SoC also gets `rmem.ko` (`/dev/rmem`, libimp's buffers in the `rmem=`
 region, and `ispmem=` on the T10/T20) and `android_logger.ko` (`/dev/log_*`).
 `adc-aux.ko` (all but the A1, on a kernel with IIO) gives vendor userspace its SADC devices,
 `/dev/jz_adc_aux_N` (T10 to T31) or `/dev/ingenic_adc_aux_N` (T32 and later),
-on the kernel's `ingenic-sadc` IIO driver.
+on the kernel's `ingenic-sadc` IIO driver, and on the T32 and T33 `/dev/temp`
+(the vendor jz_temp ioctl) on its temperature channel.
 
 The T32, T33, T40 and T41 get `mpsys_driver.ko`: the vendor multi-process
 object (`/dev/mpsys_data`, libimp's frame and encoder sharing between a
