@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# soc-nna.ko: /dev/soc-nna for the T40, T41 and A1 NNA libraries (libdrivers,
+# libvenus), vendor SDK drivers/soc-nna
+ccflags-y += -I$(src)/../rmem
+soc-nna-objs := soc_nna.o
+obj-m += soc-nna.o
