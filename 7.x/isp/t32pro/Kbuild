@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-2.0
+# tx-isp-t32pro.ko: the T32 Pro (PRJ009) ISP of the vendor SDK 2.0.0, whose
+# device layer ships as source and whose firmware (libPRJ009_firmware.a, one
+# archive for every vendor kernel) reaches the kernel only through that layer.
+# sdk/libt32pro-firmware.fw is the archive's members linked into one object.
+
+ccflags-y += -I$(src)/include -I$(src)/src
+ccflags-y += -DCONFIG_SOC_PRJ009 -DCONFIG_KERNEL_5_15
+ccflags-y += -Wno-unused-function -Wno-missing-prototypes -Wno-missing-declarations
+
+tx-isp-t32pro-objs := tx_isp_funcs.o tx-isp-module.o board/platform.o \
+		      tx_isp_device.o src/tx_isp_debug.o src/tx_isp_fs.o \
+		      src/tx_isp_vin.o tx-isp-7x.o tx-isp-fw.o
+
+obj-m += tx-isp-t32pro.o
+
+quiet_cmd_t32profw = FWCP    $@
+      cmd_t32profw = cp $< $@
+
+$(obj)/tx-isp-fw.o: $(src)/sdk/libt32pro-firmware.fw FORCE
+	$(call if_changed,t32profw)
+
+targets += tx-isp-fw.o
