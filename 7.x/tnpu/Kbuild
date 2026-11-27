@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0
+# tnpu.ko: /dev/ingenic-npu for the T32 and T33 TNPU (uranus / Magik 3.x), the vendor driver 0x010216
+# from the Magik package (uranus-3.2-C tnpu_t32 = tnpu_t33)
+tnpu-objs := tnpu_core.o tnpu_mem_bo.o tnpu_drv.o
+obj-m += tnpu.o
