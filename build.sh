@@ -11,8 +11,8 @@ show_usage() {
 	echo "Usage: $0 <soc> [kernel_version] [make_args...]"
 	echo "Usage: $0 clean"
 	echo ""
-	echo "Supported SoCs: t10, t20, t21, t23, t30, t31, t32, t33, c100, t40, t41, a1"
-	echo "Kernel versions: 3.10.14, 4.4.94, 7.x (mainline; t10 t20 t21 t23 t30 t31 t32 t33 t40 t41 a1)"
+	echo "Supported SoCs: t10, t20, t21, t23, t30, t31, t32, t32pro, t33, c100, t40, t41, a1"
+	echo "Kernel versions: 3.10.14, 4.4.94, 7.x (mainline; t10 t20 t21 t23 t30 t31 t32 t32pro t33 t40 t41 a1)"
 	echo "Example: $0 t20 3.10.14"
 	echo "Example: $0 t31 7.x"
 	echo ""
@@ -50,7 +50,7 @@ if [ "$SOC_MODEL" = "clean" ]; then
 fi
 
 # Check supported SOC models
-SUPPORTED_SOCS="t10 t20 t21 t23 t30 t31 t32 t33 c100 t40 t41 a1"
+SUPPORTED_SOCS="t10 t20 t21 t23 t30 t31 t32 t32pro t33 c100 t40 t41 a1"
 if ! echo "$SUPPORTED_SOCS" | grep -wq "$SOC_MODEL"; then
 	echo "Error: Unsupported SoC model '$SOC_MODEL'"
 	show_usage

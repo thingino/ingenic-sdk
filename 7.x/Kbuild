@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 # Out-of-tree modules for mainline Linux 7.x on the T10, T20, T21, T23, T30,
-# T31, T32, T33, T40 and T41 (see README.md). Included from the top-level Kbuild when
+# T31, T32, T32 Pro, T33, T40 and T41 (see README.md). Included from the top-level Kbuild when
 # KERNEL_VERSION=7.x.
 #
 # Each component is a directory with its own Kbuild, descended into from this
@@ -27,14 +27,15 @@
 #                          kernel's SADC driver
 
 soc := $(SOC_FAMILY)
-ifeq ($(filter t10 t20 t21 t23 t30 t31 t32 t33 t40 t41 a1,$(soc)),)
-    $(error ingenic-sdk 7.x: SOC_FAMILY=$(soc) is not supported (t10 t20 t21 t23 t30 t31 t32 t33 t40 t41 a1))
+ifeq ($(filter t10 t20 t21 t23 t30 t31 t32 t32pro t33 t40 t41 a1,$(soc)),)
+    $(error ingenic-sdk 7.x: SOC_FAMILY=$(soc) is not supported (t10 t20 t21 t23 t30 t31 t32 t32pro t33 t40 t41 a1))
 endif
 
 # The T10 runs the T20 ISP, VPU and sensor sources, built under its own names.
 src_soc := $(if $(filter t10,$(soc)),t20,$(soc))
 is_t31  := $(if $(filter t31,$(soc)),y)
 is_t32  := $(if $(filter t32,$(soc)),y)
+is_t32pro := $(if $(filter t32pro,$(soc)),y)
 is_t33  := $(if $(filter t33,$(soc)),y)
 is_t40  := $(if $(filter t40,$(soc)),y)
 is_t41  := $(if $(filter t41,$(soc)),y)
@@ -46,7 +47,7 @@ CONFIG_INGENIC_VPU           ?= $(if $(is_t31)$(is_t40)$(is_t41),n,y)
 CONFIG_INGENIC_AVPU          ?= $(if $(is_t31)$(is_t40)$(is_t41),y,n)
 CONFIG_INGENIC_IPU           ?= $(if $(is_t40)$(is_t41),n,y)
 CONFIG_INGENIC_AUDIO         ?= y
-CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31 t32 t33 t40 t41 a1,$(soc)),oss3,oss2)
+CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31 t32 t32pro t33 t40 t41 a1,$(soc)),oss3,oss2)
 CONFIG_INGENIC_HDMI_AUDIO    ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_AIP           ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_VO            ?= $(if $(is_a1),y,n)
@@ -67,7 +68,7 @@ ifeq ($(CONFIG_INGENIC_SENSOR),y)
 endif
 
 ifeq ($(CONFIG_INGENIC_VPU),y)
-    obj-m += 7.x/vpu/$(if $(is_t33),t32,$(src_soc))/
+    obj-m += 7.x/vpu/$(if $(is_t32pro)$(is_t33),t32,$(src_soc))/
 endif
 
 ifeq ($(CONFIG_INGENIC_AVPU),y)
@@ -75,7 +76,7 @@ ifeq ($(CONFIG_INGENIC_AVPU),y)
 endif
 
 ifeq ($(CONFIG_INGENIC_IPU),y)
-    obj-m += 7.x/ipu/$(if $(is_t32)$(is_t33),t32/,$(if $(is_a1),a1/,))
+    obj-m += 7.x/ipu/$(if $(is_t32)$(is_t32pro)$(is_t33),t32/,$(if $(is_a1),a1/,))
 endif
 
 ifeq ($(CONFIG_INGENIC_AUDIO),y)
