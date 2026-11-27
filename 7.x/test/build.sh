@@ -16,6 +16,7 @@
 #            imp-dual.c (T23 two sensors, multi-sensor tx-isp): CFLAGS=-DIMP_ENC_AVC_AUTO
 #            imp-ai.c imp-ao.c (all): audio capture and playback; imp-dmic.c (T32 T40 T41): DMIC capture;
 #            pcmtone.py, wavtone.py, phasejump.py analyse the result
+#            mpsys-test.c (T32 T33 T40 T41) needs no libimp: $CC -static -o mpsys-test mpsys-test.c
 # The T10, T20 and T30 vendor libraries were linked against uClibc 0.9.33:
 # on a uClibc-ng root they link libctype_shim.so (built here from
 # ctype_shim.c), which then goes next to them in the library path.
