@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0
+# bscaler.ko: /dev/bscaler0, the T40 BSCALER's completion interrupts for
+# libvenus (vendor T40 4.4.94 kernel drivers/video/ingenic_bscaler)
+obj-m += bscaler.o
