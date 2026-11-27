@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: GPL-2.0
+# mpsys_driver.ko: the vendor mpsys object (T32/T33: the 5.15 build of SDK
+# 2.0.0, shared by both; T40: SDK 1.3.1 4.4.94 build; T41: SDK 1.2.6 4.4.94
+# build) plus the adapter that runs it on Linux 7.x.
+
+soc := $(SOC_FAMILY)
+fw_soc := $(if $(filter t33,$(soc)),t32,$(soc))
+
+ccflags-$(if $(filter t32 t33,$(soc)),y) += -DMPSYS_FW_515
+ccflags-$(if $(filter t41,$(soc)),y) += -DMPSYS_NMEM_MERGE
+
+# the vendor toolchain sets an e_flags bit the mainline one does not know
+ldflags-y += --no-warn-mismatch
+
+mpsys_driver-objs := mpsys-module.o mpsys-abi.o mpsys-fwc.o mpsys-fw.o
+obj-m += mpsys_driver.o
+
+MPSYS_FW := sdk/libmpsys-$(fw_soc).fw
+
+# The functions that read the current task or the struct file by old
+# offsets are taken over by mpsys-fwc.c: their static firmware versions are
+# renamed mpsysfw_* and made global for the file_operations slot check, and
+# the firmware data they use is made global. The imports of the replaced
+# paths only (the stack protector, the inlined 4.4 kmalloc) go to stubs.
+MPSYS_FWC_STATIC := mpsys_data_ioctl mpsys_data_release
+MPSYS_FWC_SHARED := process_infos main_process_tgid data_node_list \
+	release_node_list release_node_mutex data_node_mutex push_data_mutex \
+	process_info_mutex wait_release mpsys_data_miscdev mpsys_data_fops
+ifeq ($(filter t32 t33,$(soc)),)
+MPSYS_FWC_STATIC += mpsys_utils_ioctl mpsys_utils_release
+MPSYS_FWC_SHARED += nmem_list remain_size remain_start mpsys_utils_miscdev \
+	mpsys_utils_fops
+endif
+
+MPSYS_REDEF := \
+	--redefine-sym printk=_printk \
+	--redefine-sym kmem_cache_alloc=mpsys_kmem_cache_alloc_44 \
+	--redefine-sym kmalloc_caches=mpsys_kmalloc_caches_44 \
+	--redefine-sym __stack_chk_guard=mpsys_stack_chk_guard \
+	--redefine-sym __stack_chk_fail=mpsys_stack_chk_fail \
+	$(foreach f,$(MPSYS_FWC_STATIC),--redefine-sym $(f)=mpsysfw_$(f) --globalize-symbol=mpsysfw_$(f)) \
+	$(foreach f,$(MPSYS_FWC_SHARED),--globalize-symbol=$(f))
+
+quiet_cmd_mpsysfw = FWFIX   $@
+      cmd_mpsysfw = $(OBJCOPY) $(MPSYS_REDEF) $< $@
+
+$(obj)/mpsys-fw.o: $(src)/$(MPSYS_FW) FORCE
+	$(call if_changed,mpsysfw)
+
+targets += mpsys-fw.o
