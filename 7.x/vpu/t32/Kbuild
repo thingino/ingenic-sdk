@@ -4,7 +4,7 @@
 # kernel 5.15.170 drivers/video/ingenic_vpu. The T33 and T32 Pro take the
 # vendor's CONFIG_SOC_PRJ008/PRJ009 branches, so all three build from here.
 prj := $(if $(filter t33,$(SOC_FAMILY)),PRJ008,$(if $(filter t32pro,$(SOC_FAMILY)),PRJ009,PRJ007))
-ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_$(prj) -DCONFIG_CHANNEL_NODE_NUM=4 -DCONFIG_VPU_NODE_NUM=2 -Wno-error
+ccflags-y += -I$(src) -I$(src)/../../rmem -DCONFIG_SOC_$(prj) -DCONFIG_CHANNEL_NODE_NUM=16 -DCONFIG_VPU_NODE_NUM=2 -Wno-error
 
 soc-vpu-$(SOC_FAMILY)-objs := soc_vpu.o helix.o radix.o
 obj-m += soc-vpu-$(SOC_FAMILY).o
