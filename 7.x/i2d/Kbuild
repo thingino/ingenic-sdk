@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0
+# i2d.ko: /dev/i2d (libimp rotate/mirror/flip) on the T40 and T41, from the
+# vendor 4.4.94 drivers/video/ingenic_i2d
+ccflags-y += -I$(src)/../rmem
+
+i2d-objs := ingenic_i2d.o
+obj-m += i2d.o
