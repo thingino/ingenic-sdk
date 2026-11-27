@@ -53,7 +53,10 @@
 #define DESC_TSZ_SFT		4
 #define DESC_BAI		BIT(8)
 #define DESC_DTC_MASK		GENMASK(23, 0)
+/* the T32's: 32-word bursts into a 384-word FIFO; the T32 Pro's are 16 and 32 */
+#ifndef DMA_BURST_MAX
 #define DMA_BURST_MAX		4	/* 32 words */
+#endif
 #define DMA_BURST_MAX_WORD	(1 << (DMA_BURST_MAX + 1))
 #define DESC_MAX		64
 
@@ -73,7 +76,9 @@ struct dmic_dma_desc {
 #define FFR_FTH_SFT		16
 #define FFR_FTH_MSK		GENMASK(28, FFR_FTH_SFT)
 #define FFR_FIFO_TD		BIT(7)
+#ifndef FIFO_DEPTH
 #define FIFO_DEPTH		384
+#endif
 
 /* format converter */
 #define DFCR(ch)		(0x0 + (ch) * 4)
@@ -606,6 +611,7 @@ static void audio_dmic_remove(struct platform_device *pdev)
 
 static const struct of_device_id audio_dmic_of_match[] = {
 	{ .compatible = "ingenic,t32-dmic" },
+	{ .compatible = "ingenic,t32pro-dmic" },
 	{ }
 };
 MODULE_DEVICE_TABLE(of, audio_dmic_of_match);

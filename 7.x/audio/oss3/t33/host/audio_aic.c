@@ -2341,6 +2341,7 @@ static void audio_aic_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id audio_aic_of_match[] = {
+	{ .compatible = "ingenic,t32pro-aic" },
 	{ .compatible = "ingenic,t33-aic" },
 	{ }
 };

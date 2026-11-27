@@ -774,6 +774,7 @@ static void codec_remove(struct platform_device *pdev)
 }
 
 static const struct of_device_id audio_codec_of_match[] = {
+	{ .compatible = "ingenic,t32pro-codec" },
 	{ .compatible = "ingenic,t33-codec" },
 	{ }
 };

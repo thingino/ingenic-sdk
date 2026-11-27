@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-2.0
+# audio.ko: T32 Pro AIC and inner codec, which are the T33's (vendor SDK
+# 2.0.0 oss3 host/PRJ009 and inner_codecs/PRJ009 match PRJ008 but for names),
+# and the T32's DMIC with the T32 Pro's 32-word FIFO and 16-word bursts
+# (vendor host/PRJ009/dmic/as-dma)
+ccflags-y += -I$(src)/include -DAUDIO_HAS_DMIC -DFIFO_DEPTH=32 -DDMA_BURST_MAX=3
+
+audio-objs := \
+	audio_dsp.o \
+	audio_debug.o \
+	host/audio_aic.o \
+	host/audio_dmic.o \
+	inner_codecs/codec.o
+
+obj-m += audio.o
