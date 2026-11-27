@@ -20,7 +20,7 @@
 #   CONFIG_INGENIC_FB      fb.ko (a1 only)
 #   CONFIG_INGENIC_VDEC    vdec.ko (a1 only)
 #   CONFIG_INGENIC_VO      vo.ko (a1 only)
-#   CONFIG_INGENIC_AIP     ingenic-aip.ko (a1 only)
+#   CONFIG_INGENIC_AIP     ingenic-aip.ko (t41 and a1)
 #   CONFIG_INGENIC_SOC_NNA soc-nna.ko (t40, t41 and a1), /dev/soc-nna
 #   CONFIG_INGENIC_RMEM    rmem.ko, /dev/rmem for libimp
 #   CONFIG_INGENIC_LOGGER  android_logger.ko, /dev/log_* for libimp
@@ -50,7 +50,7 @@ CONFIG_INGENIC_IPU           ?= $(if $(is_t40)$(is_t41),n,y)
 CONFIG_INGENIC_AUDIO         ?= y
 CONFIG_INGENIC_AUDIO_VARIANT ?= $(if $(filter t23 t31 t32 t32pro t33 t40 t41 a1,$(soc)),oss3,oss2)
 CONFIG_INGENIC_HDMI_AUDIO    ?= $(if $(is_a1),y,n)
-CONFIG_INGENIC_AIP           ?= $(if $(is_a1),y,n)
+CONFIG_INGENIC_AIP           ?= $(if $(is_t41)$(is_a1),y,n)
 CONFIG_INGENIC_SOC_NNA       ?= $(if $(is_t40)$(is_t41)$(is_a1),y,n)
 CONFIG_INGENIC_VO            ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_VDEC          ?= $(if $(is_a1),y,n)

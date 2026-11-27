@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
-# ingenic-aip.ko: the A1 AIP (T, F and P engines), vendor SDK A1-1.7.0 drivers/aip-driver
+# ingenic-aip.ko: the T41 and A1 AIP (T, F and P engines), vendor SDK A1-1.7.0
+# drivers/aip-driver and the T41 4.4.94 kernel drivers/video/ingenic_aip
 ingenic-aip-objs := ingenic_aip.o
 obj-m += ingenic-aip.o

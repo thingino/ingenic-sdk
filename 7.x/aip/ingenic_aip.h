@@ -10,6 +10,9 @@
 #define IOCTL_AIP_IRQ_WAIT_CMP		_IOWR('P', 0, int)
 #define IOCTL_AIP_MALLOC		_IOWR('P', 1, int)
 #define IOCTL_AIP_FREE			_IOWR('P', 2, int)
+/* T41: one user at a time per engine (libaip) */
+#define IOCTL_AIP_LOCK			_IOWR('P', 3, int)
+#define IOCTL_AIP_UNLOCK		_IOWR('P', 4, int)
 
 
 struct jz_aip_chainbuf {
