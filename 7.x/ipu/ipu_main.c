@@ -617,14 +617,26 @@ static int ipu_start(struct jz_ipu *ipu, const struct ipu_param *ip)
 
 /*
  * IOCTL_IPU_BUF_FLUSH_CACHE: the vendor driver called dma_cache_sync()
- * (writeback+invalidate) on the user address. libimp passes addresses inside
- * its /dev/rmem mapping, see rmem_cache.h.
+ * (writeback+invalidate) on the address: a user address inside libimp's
+ * /dev/rmem mapping (see rmem_cache.h) or the driver's own buffer by its
+ * kernel address (vaddr_alloc), which is coherent here and needs nothing.
  */
 static int ipu_flush(struct jz_ipu *ipu, const struct ipu_flush_cache_para *fc)
 {
+	unsigned long base = (unsigned long)ipu->pbuf;
+	int ret;
+
 	if (trace)
 		dev_info(ipu->dev, "flush %08x+%x\n", fc->addr, fc->size);
-	return rmem_cache_sync_user(fc->addr, fc->size, DMA_BIDIRECTIONAL);
+	if (ipu->pbuf && fc->addr >= base && fc->addr - base < IPU_BUF_SIZE &&
+	    fc->size <= IPU_BUF_SIZE - (fc->addr - base))
+		return 0;
+	ret = rmem_cache_sync_user(fc->addr, fc->size, DMA_BIDIRECTIONAL);
+	if (ret)
+		dev_warn_ratelimited(ipu->dev,
+				     "flush %08x+%x: neither the IPU buffer nor a user mapping (%d)\n",
+				     fc->addr, fc->size, ret);
+	return ret;
 }
 
 static long ipu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)

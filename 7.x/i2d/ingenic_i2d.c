@@ -14,6 +14,7 @@
 #include <linux/kernel.h>
 #include <linux/clk.h>
 #include <linux/completion.h>
+#include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/miscdevice.h>
@@ -45,6 +46,7 @@ struct jz_i2d {
 	struct completion done;
 	struct i2d_buf_info pbuf;
 	void *pbuf_virt;
+	dma_addr_t pbuf_dma;	/* pbuf_virt mapped for the I2D, streaming */
 };
 
 static const char * const i2d_reg_names[] = {
@@ -250,9 +252,21 @@ static int i2d_start(struct jz_i2d *i2d, const struct i2d_param *ip)
 static int i2d_get_pbuf(struct jz_i2d *i2d, void __user *uarg)
 {
 	if (!i2d->pbuf_virt) {
+		/*
+		 * Cached kernel memory as the vendor's kmalloc() buffer: userspace
+		 * reaches it through /dev/mem at paddr and has it written back and
+		 * invalidated by IOCTL_I2D_BUF_FLUSH_CACHE with vaddr_alloc.
+		 */
 		i2d->pbuf_virt = kzalloc(I2D_BUF_SIZE, GFP_KERNEL);
 		if (!i2d->pbuf_virt)
 			return -ENOMEM;
+		i2d->pbuf_dma = dma_map_single(i2d->dev, i2d->pbuf_virt, I2D_BUF_SIZE,
+					       DMA_BIDIRECTIONAL);
+		if (dma_mapping_error(i2d->dev, i2d->pbuf_dma)) {
+			kfree(i2d->pbuf_virt);
+			i2d->pbuf_virt = NULL;
+			return -ENOMEM;
+		}
 		i2d->pbuf.vaddr_alloc = (u32)(unsigned long)i2d->pbuf_virt;
 		i2d->pbuf.size = I2D_BUF_SIZE;
 		i2d->pbuf.paddr = virt_to_phys(i2d->pbuf_virt);
@@ -265,9 +279,41 @@ static int i2d_get_pbuf(struct jz_i2d *i2d, void __user *uarg)
 
 static void i2d_put_pbuf(struct jz_i2d *i2d)
 {
+	if (i2d->pbuf_virt)
+		dma_unmap_single(i2d->dev, i2d->pbuf_dma, I2D_BUF_SIZE,
+				 DMA_BIDIRECTIONAL);
 	kfree(i2d->pbuf_virt);
 	i2d->pbuf_virt = NULL;
 	memset(&i2d->pbuf, 0, sizeof(i2d->pbuf));
+}
+
+/*
+ * IOCTL_I2D_BUF_FLUSH_CACHE: the vendor driver ran dma_cache_sync()
+ * (write back and invalidate) on the address, which is either inside the
+ * driver's buffer by its kernel address (vaddr_alloc) or a user address
+ * inside libimp's /dev/rmem mapping.
+ */
+static int i2d_flush(struct jz_i2d *i2d, const struct i2d_flush_cache_para *fc)
+{
+	unsigned long addr = (unsigned long)fc->addr;
+	unsigned long base = (unsigned long)i2d->pbuf_virt;
+	int ret;
+
+	if (i2d->pbuf_virt && addr >= base && addr - base < I2D_BUF_SIZE &&
+	    fc->size <= I2D_BUF_SIZE - (addr - base)) {
+		dma_addr_t h = i2d->pbuf_dma + (addr - base);
+
+		dma_sync_single_for_device(i2d->dev, h, fc->size, DMA_BIDIRECTIONAL);
+		dma_sync_single_for_cpu(i2d->dev, h, fc->size, DMA_BIDIRECTIONAL);
+		return 0;
+	}
+
+	ret = rmem_cache_sync_user(addr, fc->size, DMA_BIDIRECTIONAL);
+	if (ret)
+		dev_warn_ratelimited(i2d->dev,
+				     "flush %#lx+%#x: neither the I2D buffer nor a user mapping (%d)\n",
+				     addr, fc->size, ret);
+	return ret;
 }
 
 static long i2d_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -302,12 +348,10 @@ static long i2d_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 			dev_warn(i2d->dev, "no buffer to free\n");
 		break;
 	case IOCTL_I2D_BUF_FLUSH_CACHE:
-		/* the vendor driver ran dma_cache_sync() on the user address */
 		if (copy_from_user(&fc, uarg, sizeof(fc)))
 			ret = -EFAULT;
 		else
-			ret = rmem_cache_sync_user((unsigned long)fc.addr, fc.size,
-						   DMA_BIDIRECTIONAL);
+			ret = i2d_flush(i2d, &fc);
 		break;
 	default:
 		dev_err(i2d->dev, "invalid command 0x%08x\n", cmd);
