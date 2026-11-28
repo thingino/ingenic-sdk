@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-2.0
 # adc-aux.ko: the vendor kernels' /dev/jz_adc_aux_N (ingenic_adc_aux_N on the
 # parts whose vendor kernel is 4.4) on the mainline ingenic-sadc IIO driver
-ccflags-y += $(if $(filter t32 t33 t40 t41,$(SOC_FAMILY)),-DADC_AUX_44)
+ccflags-y += $(if $(filter t32 t32pro t33 t40 t41,$(SOC_FAMILY)),-DADC_AUX_44)
 obj-m += adc-aux.o

@@ -12,9 +12,9 @@
  * what the vendor boards wire) until ADC_SET_VREF sets another.
  * ADC_ENABLE and ADC_DISABLE start and stop nothing here: a read converts.
  *
- * Where the SADC driver has a temperature channel (T32, T33), /dev/temp is
- * the vendor jz_temp device: TSENSOR_GET_TEMP writes the temperature in
- * millidegrees Celsius to the int its argument points at.
+ * Where the SADC driver has a temperature channel (T32, T32 Pro, T33),
+ * /dev/temp is the vendor jz_temp device: TSENSOR_GET_TEMP writes the
+ * temperature in millidegrees Celsius to the int its argument points at.
  */
 #include <linux/device.h>
 #include <linux/fs.h>
