@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# tnpu.ko for the T32 Pro: /dev/ingenic-npu for its two-core TNPU (uranus 0x0201xx), the vendor
+# driver 0x020112 from the SDK 2.0.0 algorithm package (uranus-3.2-C tnpu_t32pro); the T32/T33
+# driver in ../tnpu cannot drive it (another control block layout and job ioctls)
+tnpu-objs := tnpu_core.o tnpu_mem_bo.o tnpu_drv.o
+obj-m += tnpu.o

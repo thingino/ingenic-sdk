@@ -23,7 +23,7 @@
 #   CONFIG_INGENIC_AIP     ingenic-aip.ko (t41 and a1)
 #   CONFIG_INGENIC_SOC_NNA soc-nna.ko (t40, t41 and a1), /dev/soc-nna
 #   CONFIG_INGENIC_BSCALER bscaler.ko (t40 only), /dev/bscaler0
-#   CONFIG_INGENIC_TNPU    tnpu.ko (t32 and t33), /dev/ingenic-npu
+#   CONFIG_INGENIC_TNPU    tnpu.ko (t32, t32pro and t33), /dev/ingenic-npu
 #   CONFIG_INGENIC_RMEM    rmem.ko, /dev/rmem for libimp
 #   CONFIG_INGENIC_LOGGER  android_logger.ko, /dev/log_* for libimp
 #   CONFIG_INGENIC_ADC_AUX adc-aux.ko, the vendor /dev/*adc_aux_N on the
@@ -58,7 +58,7 @@ CONFIG_INGENIC_HDMI_AUDIO    ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_AIP           ?= $(if $(is_t41)$(is_a1),y,n)
 CONFIG_INGENIC_SOC_NNA       ?= $(if $(is_t40)$(is_t41)$(is_a1),y,n)
 CONFIG_INGENIC_BSCALER       ?= $(if $(is_t40),y,n)
-CONFIG_INGENIC_TNPU          ?= $(if $(is_t32)$(is_t33),y,n)
+CONFIG_INGENIC_TNPU          ?= $(if $(is_t32)$(is_t32pro)$(is_t33),y,n)
 CONFIG_INGENIC_VO            ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_VDEC          ?= $(if $(is_a1),y,n)
 CONFIG_INGENIC_FB            ?= $(if $(is_a1),y,n)
@@ -127,7 +127,7 @@ ifeq ($(CONFIG_INGENIC_BSCALER),y)
 endif
 
 ifeq ($(CONFIG_INGENIC_TNPU),y)
-    obj-m += 7.x/tnpu/
+    obj-m += 7.x/$(if $(is_t32pro),tnpu-t32pro,tnpu)/
 endif
 
 ifeq ($(CONFIG_INGENIC_RMEM),y)
