@@ -117,8 +117,17 @@ static const struct vm_operations_struct rmem_vm_ops = {
 
 static int rmem_mmap(struct file *file, struct vm_area_struct *vma)
 {
-	phys_addr_t start = (phys_addr_t)vma->vm_pgoff << PAGE_SHIFT;
+	phys_addr_t start = (unsigned long)vma->vm_pgoff << PAGE_SHIFT;
 	unsigned long len = vma->vm_end - vma->vm_start;
+
+	/*
+	 * Vendor binaries also pass the KSEG0/KSEG1 alias of a physical
+	 * address (0x8xxxxxxx, 0xaxxxxxxx) as the offset. A 32-bit off_t
+	 * arrives sign-extended (see FOP_UNSIGNED_OFFSET below), so only the
+	 * low 32 address bits count.
+	 */
+	if (start >= SZ_2G && start < SZ_2G + SZ_1G)
+		start &= SZ_512M - 1;
 
 	/* libimp maps by physical address: only the rmem= and ispmem= regions */
 	if (!((start >= rmem_base && len <= rmem_size &&
@@ -127,6 +136,7 @@ static int rmem_mmap(struct file *file, struct vm_area_struct *vma)
 	       start - ispmem_base <= ispmem_size - len)))
 		return -EPERM;
 
+	vma->vm_pgoff = start >> PAGE_SHIFT;
 	vm_flags_set(vma, VM_IO);
 	if (cached) {
 		vma->vm_page_prot = __pgprot((pgprot_val(vma->vm_page_prot) & ~_CACHE_MASK) |
@@ -144,6 +154,8 @@ static int rmem_mmap(struct file *file, struct vm_area_struct *vma)
 
 static struct file_operations rmem_fops = {
 	.owner = THIS_MODULE,
+	/* a 32-bit off_t of 0x8xxxxxxx reaches mmap sign-extended */
+	.fop_flags = FOP_UNSIGNED_OFFSET,
 	.open = rmem_open,
 	.release = rmem_release,
 	.unlocked_ioctl = rmem_ioctl,
