@@ -15,6 +15,7 @@
 #include <linux/wait.h>
 #include <linux/file.h>
 #include <linux/delay.h>
+#include <linux/ktime.h>
 #include <linux/dma-mapping.h>
 #include <linux/console.h>
 #include <linux/workqueue.h>
@@ -32,11 +33,12 @@
 extern void (*r4k_blast_dcache)(void);
 
 /*
- * The vendor polls the cores for ~2.6 ms (sleep) and ~330 us (bus idle);
- * cores running in other QEMU processes can take longer. Silicon answers
- * within the first polls either way.
+ * The vendor polls the cores a fixed number of times, ~2.6 ms (sleep) and
+ * ~330 us (bus idle) on silicon, which answers within the first polls. A
+ * count is no bound on time: where each register read is slow (cores in
+ * other QEMU processes) it expires before they sleep. Bound by the clock.
  */
-#define TNPU_POLL_US              20000
+#define TNPU_POLL_US              200000
 
 /* console_drivers is not exported on 7.x: the console UART is a parameter */
 #define TNPU_UART0_IOBASE         0x10030000
@@ -310,37 +312,40 @@ static void __iomem *tnpu_ioremap_regs(struct platform_device *pdev, int index)
 	return map;
 }
 
+/* called with the task spinlock held too: no sleeping */
+static int tnpu_poll(volatile unsigned int *reg, unsigned int mask)
+{
+	ktime_t end = ktime_add_us(ktime_get(), TNPU_POLL_US);
+
+	for (;;) {
+		bool late = ktime_after(ktime_get(), end);
+
+		if ((*reg & mask) == mask)
+			return 0;
+		if (late)
+			return -ETIME;
+		udelay(1);
+	}
+}
+
 static int tnpu_hardware_sleep(void)
 {
-	int cnt = 0;
-
-	while(!(*TNPU_CCU_CCSR & TNPU_CCU_CCSR_SLEEP_MASK)) {
-		udelay(1);
-		cnt++;
-		if (cnt > TNPU_POLL_US) {
-			PRINT_TNPU_ERROR("Hardware init timeout: CCSR=0x%x\n", *TNPU_CCU_CCSR);
-			return -ETIME;
-		}
-	};
+	if (tnpu_poll(TNPU_CCU_CCSR, TNPU_CCU_CCSR_SLEEP_MASK)) {
+		PRINT_TNPU_ERROR("Hardware init timeout: CCSR=0x%x\n", *TNPU_CCU_CCSR);
+		return -ETIME;
+	}
 
 	return 0;
 }
 
 static int tnpu_hardware_bus_idle(void)
 {
-	int cnt = 0;
-
 	*TNPU_CCU_BECR |= TNPU_CCU_BECR_SET_MASK;
 
-	do {
-		cnt++;
-		udelay(1);
-		if (cnt > TNPU_POLL_US) {
-			PRINT_TNPU_ERROR("Wait for bus idle failed: BECR=0x%x\n", *TNPU_CCU_BECR);
-			return -ETIME;
-		}
-	} while ((*TNPU_CCU_BECR & TNPU_CCU_BECR_ALL_IDLE_MASK)
-			!= TNPU_CCU_BECR_ALL_IDLE_MASK);
+	if (tnpu_poll(TNPU_CCU_BECR, TNPU_CCU_BECR_ALL_IDLE_MASK)) {
+		PRINT_TNPU_ERROR("Wait for bus idle failed: BECR=0x%x\n", *TNPU_CCU_BECR);
+		return -ETIME;
+	}
 
 	return 0;
 }
